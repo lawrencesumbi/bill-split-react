@@ -1,22 +1,13 @@
 import { ThemedText } from '@/components/themed-text'
-import { ThemedView } from '@/components/themed-view'
 import { supabase } from '@/utils/supabase'
 import { useSignUp } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
-import * as React from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import validator from 'validator'
 
-import { useSignUp } from '@clerk/clerk-expo'
-import { Link, useRouter } from 'expo-router'
 import * as React from 'react'
 import {
-  ImageBackground,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View
+  ImageBackground
 } from 'react-native'
 
 export default function Page() {
@@ -202,136 +193,106 @@ export default function Page() {
   // SIGN UP UI (UNCHANGED)
   // =============================
   return (
-    <ScrollView>
-      <ThemedView style={styles.container}>
-        <ThemedText type="title" style={styles.title}>
-          Sign up
-        </ThemedText>
-        {messages.length > 0 &&
-          messages.map((message: any, index: number) => (
-            <Text key={index} style={styles.errorMessage}>{message.longMessage}</Text>
-          ))
-        }
-        <ThemedText style={styles.label}>First name</ThemedText>
-        <TextInput
-          style={styles.input}
-          autoCapitalize="none"
-          value={firstName}
-          placeholder="Enter first name"
-          placeholderTextColor="#666666"
-          onChangeText={(firstName) => setFirstName(firstName)}
-          keyboardType="default"
-        />
-        {
-          errors.firstName ? <Text style={styles.errorMessage}>{errors.firstName}</Text> : null
-        }
-        <ThemedText style={styles.label}>Last name</ThemedText>
-        <TextInput
-          style={styles.input}
-          autoCapitalize="none"
-          value={lastName}
-          placeholder="Enter last name"
-          placeholderTextColor="#666666"
-          onChangeText={(lastName) => setLastName(lastName)}
-          keyboardType="default"
-        />
-        {
-          errors.lastName ? <Text style={styles.errorMessage}>{errors.lastName}</Text> : null
-        }
-        <ThemedText style={styles.label}>Nickname</ThemedText>
-        <TextInput
-          style={styles.input}
-          autoCapitalize="none"
-          value={nickname}
-          placeholder="Enter nickname"
-          placeholderTextColor="#666666"
-          onChangeText={(nickname) => setNickname(nickname)}
-          keyboardType="default"
-        />
-        {
-          errors.nickname ? <Text style={styles.errorMessage}>{errors.nickname}</Text> : null
-        }
-        {
-          errors.nicknameExists ? <Text style={styles.errorMessage}>{errors.nicknameExists}</Text> : null
-        }
-        <ThemedText style={styles.label}>Username</ThemedText>
-        <TextInput
-          style={styles.input}
-          autoCapitalize="none"
-          value={username}
-          placeholder="Enter usename"
-          placeholderTextColor="#666666"
-          onChangeText={(username) => setUsername(username)}
-          keyboardType="default"
-        />
-        {
-          errors.username ? <Text style={styles.errorMessage}>{errors.username}</Text> : null
-        }
-        <ThemedText style={styles.label}>Email address</ThemedText>
-        <TextInput
-          style={styles.input}
-          autoCapitalize="none"
-          value={emailAddress}
-          placeholder="Enter email"
-          placeholderTextColor="#666666"
-          onChangeText={(email) => setEmailAddress(email)}
-          keyboardType="email-address"
-        />
-        {
-          errors.emailAddress ? <Text style={styles.errorMessage}>{errors.emailAddress}</Text> : null
-        }
-        {
-          errors.emailFormat ? <Text style={styles.errorMessage}>{errors.emailFormat}</Text> : null
-        }
-        <ThemedText style={styles.label}>Password</ThemedText>
-        <TextInput
-          style={styles.input}
-          value={password}
-          placeholder="Enter password"
-          placeholderTextColor="#666666"
-          secureTextEntry={true}
-          onChangeText={(password) => setPassword(password)}
-        />
-        {
-          errors.passwordTooShort ? <Text style={styles.errorMessage}>{errors.passwordTooShort}</Text> : null
-        }
-        {
-          errors.passwordTooLong ? <Text style={styles.errorMessage}>{errors.passwordTooLong}</Text> : null
-        }
-        {
-          errors.passwordTooWeak ? <Text style={styles.errorMessage}>{errors.passwordTooWeak}</Text> : null
-        }
-        {
-          errors.passwordDoesntMatch ? <Text style={styles.errorMessage}>{errors.passwordDoesntMatch}</Text> : null
-        }
-        <ThemedText style={styles.label}>Confirm password</ThemedText>
-        <TextInput
-          style={styles.input}
-          value={confirmPassword}
-          placeholder="Enter confirm password"
-          placeholderTextColor="#666666"
-          secureTextEntry={true}
-          onChangeText={(confirmPassword) => setConfirmPassword(confirmPassword)}
-        />
-        <Pressable
-          style={({ pressed }) => [
-            styles.button,
-            (!emailAddress || !password || !firstName || !lastName || !nickname || !confirmPassword) && styles.buttonDisabled,
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={handleSubmit}
-          disabled={!emailAddress || !password}
-        >
-          <ThemedText style={styles.buttonText}>Continue</ThemedText>
-        </Pressable>
-        <View style={styles.linkContainer}>
-          <ThemedText>Have an account? </ThemedText>
-          <Link href="/sign-in">
-            <ThemedText type="link">Sign in</ThemedText>
-          </Link>
-        </View>
-      </ThemedView>
-    </ScrollView >
+    // <ScrollView>
+    //   <ThemedView style={styles.container}>
+    //     <ThemedText type="title" style={styles.title}>
+    //       Sign up
+    //     </ThemedText>
+
+    //     <ThemedText style={styles.label}>First name</ThemedText>
+    //     <TextInput
+    //       style={styles.input}
+    //       autoCapitalize="none"
+    //       value={firstName}
+    //       placeholder="Enter first name"
+    //       placeholderTextColor="#666666"
+    //       onChangeText={(firstName) => setFirstName(firstName)}
+    //       keyboardType="default"
+    //     />
+
+    //     <ThemedText style={styles.label}>Last name</ThemedText>
+    //     <TextInput
+    //       style={styles.input}
+    //       autoCapitalize="none"
+    //       value={lastName}
+    //       placeholder="Enter last name"
+    //       placeholderTextColor="#666666"
+    //       onChangeText={(lastName) => setLastName(lastName)}
+    //       keyboardType="default"
+    //     />
+
+    //     <ThemedText style={styles.label}>Nickname</ThemedText>
+    //     <TextInput
+    //       style={styles.input}
+    //       autoCapitalize="none"
+    //       value={nickname}
+    //       placeholder="Enter nickname"
+    //       placeholderTextColor="#666666"
+    //       onChangeText={(nickname) => setNickname(nickname)}
+    //       keyboardType="default"
+    //     />
+
+    //     <ThemedText style={styles.label}>Username</ThemedText>
+    //     <TextInput
+    //       style={styles.input}
+    //       autoCapitalize="none"
+    //       value={username}
+    //       placeholder="Enter usename"
+    //       placeholderTextColor="#666666"
+    //       onChangeText={(username) => setUsername(username)}
+    //       keyboardType="default"
+    //     />
+
+    //     <ThemedText style={styles.label}>Email address</ThemedText>
+    //     <TextInput
+    //       style={styles.input}
+    //       autoCapitalize="none"
+    //       value={emailAddress}
+    //       placeholder="Enter email"
+    //       placeholderTextColor="#666666"
+    //       onChangeText={(email) => setEmailAddress(email)}
+    //       keyboardType="email-address"
+    //     />
+
+    //     <ThemedText style={styles.label}>Password</ThemedText>
+    //     <TextInput
+    //       style={styles.input}
+    //       value={password}
+    //       placeholder="Enter password"
+    //       placeholderTextColor="#666666"
+    //       secureTextEntry={true}
+    //       onChangeText={(password) => setPassword(password)}
+    //     />
+    //     {
+
+    //     <ThemedText style={styles.label}>Confirm password</ThemedText>
+    //     <TextInput
+    //       style={styles.input}
+    //       value={confirmPassword}
+    //       placeholder="Enter confirm password"
+    //       placeholderTextColor="#666666"
+    //       secureTextEntry={true}
+    //       onChangeText={(confirmPassword) => setConfirmPassword(confirmPassword)}
+    //     />
+    //     <Pressable
+    //       style={({ pressed }) => [
+    //         styles.button,
+    //         (!emailAddress || !password || !firstName || !lastName || !nickname || !confirmPassword) && styles.buttonDisabled,
+    //         pressed && styles.buttonPressed,
+    //       ]}
+    //       onPress={handleSubmit}
+    //       disabled={!emailAddress || !password}
+    //     >
+    //       <ThemedText style={styles.buttonText}>Continue</ThemedText>
+    //     </Pressable>
+    //     <View style={styles.linkContainer}>
+    //       <ThemedText>Have an account? </ThemedText>
+    //       <Link href="/sign-in">
+    //         <ThemedText type="link">Sign in</ThemedText>
+    //       </Link>
+    //     </View>
+    //   </ThemedView>
+    // </ScrollView >
     <View style={styles.mainContainer}>
       <ImageBackground
         source={require('../../assets/images/bg.jpg')}
@@ -347,25 +308,44 @@ export default function Page() {
               <ThemedText style={styles.subtitle}>
                 Join Bill Splitter and start saving time
               </ThemedText>
-
+              {
+                messages.map((message: any, index: number) => (
+                  <Text key={index} style={styles.errorMessage}>{message.longMessage}</Text>
+                ))
+              }
               <View style={styles.inputContainer}>
                 <ThemedText style={styles.label}>First Name</ThemedText>
                 <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} />
+                {
+                  errors.firstName ? <Text style={styles.errorMessage}>{errors.firstName}</Text> : null
+                }
               </View>
 
               <View style={styles.inputContainer}>
                 <ThemedText style={styles.label}>Last Name</ThemedText>
                 <TextInput style={styles.input} value={lastName} onChangeText={setLastName} />
+                {
+                  errors.lastName ? <Text style={styles.errorMessage}>{errors.lastName}</Text> : null
+                }
               </View>
 
               <View style={styles.inputContainer}>
                 <ThemedText style={styles.label}>Nickname</ThemedText>
                 <TextInput style={styles.input} value={nickname} onChangeText={setNickname} />
+                {
+                  errors.nickname ? <Text style={styles.errorMessage}>{errors.nickname}</Text> : null
+                }
+                {
+                  errors.nicknameExists ? <Text style={styles.errorMessage}>{errors.nicknameExists}</Text> : null
+                }
               </View>
 
               <View style={styles.inputContainer}>
                 <ThemedText style={styles.label}>Username</ThemedText>
                 <TextInput style={styles.input} value={username} onChangeText={setUsername} />
+                {
+                  errors.username ? <Text style={styles.errorMessage}>{errors.username}</Text> : null
+                }
               </View>
 
               <View style={styles.inputContainer}>
@@ -377,6 +357,12 @@ export default function Page() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
+                {
+                  errors.emailAddress ? <Text style={styles.errorMessage}>{errors.emailAddress}</Text> : null
+                }
+                {
+                  errors.emailFormat ? <Text style={styles.errorMessage}>{errors.emailFormat}</Text> : null
+                }
               </View>
 
               <View style={styles.inputContainer}>
@@ -387,19 +373,31 @@ export default function Page() {
                   onChangeText={setPassword}
                   secureTextEntry
                 />
+                {
+                  errors.passwordTooShort ? <Text style={styles.errorMessage}>{errors.passwordTooShort}</Text> : null
+                }
+                {
+                  errors.passwordTooLong ? <Text style={styles.errorMessage}>{errors.passwordTooLong}</Text> : null
+                }
+                {
+                  errors.passwordTooWeak ? <Text style={styles.errorMessage}>{errors.passwordTooWeak}</Text> : null
+                }
+                {
+                  errors.passwordDoesntMatch ? <Text style={styles.errorMessage}>{errors.passwordDoesntMatch}</Text> : null
+                }
               </View>
 
               <View style={styles.inputContainer}>
                 <ThemedText style={styles.label}>Confirm Password</ThemedText>
                 <TextInput
                   style={styles.input}
-                  value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry
                 />
+
               </View>
 
-              <Pressable style={styles.button} onPress={onSignUpPress}>
+              <Pressable style={styles.button} onPress={handleSubmit}>
                 <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
               </Pressable>
 
@@ -486,7 +484,7 @@ const styles = StyleSheet.create({
     color: '#000'
   },
   button: {
-    backgroundColor: 'tomato', 
+    backgroundColor: 'tomato',
     width: '100%',
     height: 50,
     borderRadius: 10,
@@ -515,6 +513,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   errorMessage: {
-    color: 'red'
+    color: 'red',
   }
 })
