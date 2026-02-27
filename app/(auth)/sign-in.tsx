@@ -1,54 +1,42 @@
-import { ThemedText } from '@/components/themed-text'
-import { ThemedView } from '@/components/themed-view'
 import { useSignIn } from '@clerk/clerk-expo'
 import type { EmailCodeFactor } from '@clerk/types'
-import { Link, useRouter } from 'expo-router'
+import { useRouter } from 'expo-router'
 import * as React from 'react'
-import { Pressable, StyleSheet, TextInput, View } from 'react-native'
+import { ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
-export default function Page() {
-  const { signIn, setActive, isLoaded } = useSignIn()
+export default function Login() {
   const router = useRouter()
+  const { signIn, setActive, isLoaded } = useSignIn()
 
   const [emailAddress, setEmailAddress] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [code, setCode] = React.useState('')
   const [showEmailCode, setShowEmailCode] = React.useState(false)
 
-  // Handle the submission of the sign-in form
+  // Handle login submission
   const onSignInPress = React.useCallback(async () => {
     if (!isLoaded) return
 
-    // Start the sign-in process using the email and password provided
     try {
       const signInAttempt = await signIn.create({
         identifier: emailAddress,
         password,
       })
 
-      // If sign-in process is complete, set the created session as active
-      // and redirect the user
       if (signInAttempt.status === 'complete') {
         await setActive({
           session: signInAttempt.createdSessionId,
           navigate: async ({ session }) => {
             if (session?.currentTask) {
-              // Handle pending session tasks
-              // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
               console.log(session?.currentTask)
               return
             }
-
             router.replace('/')
           },
         })
       } else if (signInAttempt.status === 'needs_second_factor') {
-        // Check if email_code is a valid second factor
-        // This is required when Client Trust is enabled and the user
-        // is signing in from a new device.
-        // See https://clerk.com/docs/guides/secure/client-trust
         const emailCodeFactor = signInAttempt.supportedSecondFactors?.find(
-          (factor): factor is EmailCodeFactor => factor.strategy === 'email_code',
+          (factor): factor is EmailCodeFactor => factor.strategy === 'email_code'
         )
 
         if (emailCodeFactor) {
@@ -59,18 +47,14 @@ export default function Page() {
           setShowEmailCode(true)
         }
       } else {
-        // If the status is not complete, check why. User may need to
-        // complete further steps.
         console.error(JSON.stringify(signInAttempt, null, 2))
       }
     } catch (err) {
-      // See https://clerk.com/docs/guides/development/custom-flows/error-handling
-      // for more info on error handling
       console.error(JSON.stringify(err, null, 2))
     }
   }, [isLoaded, signIn, setActive, router, emailAddress, password])
 
-  // Handle the submission of the email verification code
+  // Handle email code verification
   const onVerifyPress = React.useCallback(async () => {
     if (!isLoaded) return
 
@@ -85,12 +69,9 @@ export default function Page() {
           session: signInAttempt.createdSessionId,
           navigate: async ({ session }) => {
             if (session?.currentTask) {
-              // Handle pending session tasks
-              // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
               console.log(session?.currentTask)
               return
             }
-
             router.replace('/')
           },
         })
@@ -102,127 +83,188 @@ export default function Page() {
     }
   }, [isLoaded, signIn, setActive, router, code])
 
-  // Display email code verification form
+  // Show email verification code input if required
   if (showEmailCode) {
     return (
-      <ThemedView style={styles.container}>
-        <ThemedText type="title" style={styles.title}>
-          Verify your email
-        </ThemedText>
-        <ThemedText style={styles.description}>
-          A verification code has been sent to your email.
-        </ThemedText>
-        <TextInput
-          style={styles.input}
-          value={code}
-          placeholder="Enter verification code"
-          placeholderTextColor="#666666"
-          onChangeText={(code) => setCode(code)}
-          keyboardType="numeric"
-        />
-        <Pressable
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-          onPress={onVerifyPress}
+      <View style={styles.mainContainer}>
+        <ImageBackground 
+          source={require('../../assets/images/bg.jpg')} 
+          style={styles.backgroundImage}
+          resizeMode="cover"
         >
-          <ThemedText style={styles.buttonText}>Verify</ThemedText>
-        </Pressable>
-      </ThemedView>
+          <View style={styles.overlay}>
+            <View style={styles.loginBox}>
+              <Text style={styles.title}>Verify Email</Text>
+              <Text style={styles.subtitle}>A verification code has been sent to your email.</Text>
+              <TextInput
+                style={styles.input}
+                value={code}
+                placeholder="Enter verification code"
+                placeholderTextColor="#999"
+                keyboardType="numeric"
+                onChangeText={setCode}
+              />
+              <Pressable style={styles.button} onPress={onVerifyPress}>
+                <Text style={styles.buttonText}>Verify</Text>
+              </Pressable>
+            </View>
+          </View>
+        </ImageBackground>
+      </View>
     )
   }
 
+  // Default login form
   return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="title" style={styles.title}>
-        Sign in
-      </ThemedText>
-      <ThemedText style={styles.label}>Email address</ThemedText>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={emailAddress}
-        placeholder="Enter email"
-        placeholderTextColor="#666666"
-        onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
-        keyboardType="email-address"
-      />
-      <ThemedText style={styles.label}>Password</ThemedText>
-      <TextInput
-        style={styles.input}
-        value={password}
-        placeholder="Enter password"
-        placeholderTextColor="#666666"
-        secureTextEntry={true}
-        onChangeText={(password) => setPassword(password)}
-      />
-      <Pressable
-        style={({ pressed }) => [
-          styles.button,
-          (!emailAddress || !password) && styles.buttonDisabled,
-          pressed && styles.buttonPressed,
-        ]}
-        onPress={onSignInPress}
-        disabled={!emailAddress || !password}
+    <View style={styles.mainContainer}>
+      <ImageBackground 
+        source={require('../../assets/images/bg.jpg')} 
+        style={styles.backgroundImage}
+        resizeMode="cover"
       >
-        <ThemedText style={styles.buttonText}>Sign in</ThemedText>
-      </Pressable>
-      <View style={styles.linkContainer}>
-        <ThemedText>Don't have an account? </ThemedText>
-        <Link href="/sign-up">
-          <ThemedText type="link">Sign up</ThemedText>
-        </Link>
-      </View>
-    </ThemedView>
+        <View style={styles.overlay}>
+          <View style={styles.loginBox}>
+            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={styles.subtitle}>Log in to split your bills</Text>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email Address or Username</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="test@example.com | Username"
+                placeholderTextColor="#999"
+                autoCapitalize="none"
+                value={emailAddress}
+                onChangeText={setEmailAddress}
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="••••••••"
+                placeholderTextColor="#999"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+            </View>
+
+            <Pressable onPress={() => router.push('/forgot-password')}>
+              <Text style={styles.footerText1}> <Text style={styles.link}>Forgot Password?</Text> </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.button}
+              onPress={onSignInPress}
+              disabled={!emailAddress || !password}
+            >
+              <Text style={styles.buttonText}>Login</Text>
+            </Pressable>
+
+            <Pressable onPress={() => router.push('/sign-up')}>
+              <Text style={styles.footerText}>
+                Don't have an account? <Text style={styles.link1}>Sign Up</Text>
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </ImageBackground>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    padding: 20,
-    gap: 12,
+    backgroundColor: '#000',
+  },
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loginBox: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 40,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
   },
   title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
     marginBottom: 8,
   },
-  description: {
-    fontSize: 14,
-    marginBottom: 16,
-    opacity: 0.8,
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 30,
+  },
+  inputContainer: {
+    width: '100%',
+    marginBottom: 20,
   },
   label: {
-    fontWeight: '600',
     fontSize: 14,
+    fontWeight: '600',
+    color: '#444',
+    marginBottom: 8,
+    alignSelf: 'flex-start',
   },
   input: {
+    width: '100%',
+    height: 50,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 15,
     fontSize: 16,
-    backgroundColor: '#fff',
+    backgroundColor: '#f9f9f9',
   },
   button: {
-    backgroundColor: '#0a7ea4',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    backgroundColor: 'tomato',
+    width: '100%',
+    height: 50,
+    borderRadius: 10,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonPressed: {
-    opacity: 0.7,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
+    marginTop: 10,
+    marginBottom: 20,
   },
   buttonText: {
     color: '#fff',
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
-  linkContainer: {
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 12,
-    alignItems: 'center',
+  footerText1: {
+    marginLeft: 190,
+    fontSize: 14,
+    color: '#666',
+  },
+  footerText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  link: {
+    color: 'black',
+  },
+  link1: {
+    color: 'tomato',
+    fontWeight: 'bold',
   },
 })

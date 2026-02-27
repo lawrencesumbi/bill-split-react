@@ -1,9 +1,15 @@
 import { ThemedText } from '@/components/themed-text'
-import { ThemedView } from '@/components/themed-view'
 import { useSignUp } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
 import * as React from 'react'
-import { Pressable, StyleSheet, TextInput, View } from 'react-native'
+import {
+  ImageBackground,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View
+} from 'react-native'
 
 export default function Page() {
   const { isLoaded, signUp, setActive } = useSignUp()
@@ -19,12 +25,10 @@ export default function Page() {
   const [pendingVerification, setPendingVerification] = React.useState(false)
   const [code, setCode] = React.useState('')
 
-  // Handle submission of sign-up form
   const onSignUpPress = async () => {
     if (!isLoaded) return
     if (password != confirmPassword) return
 
-    // Start sign-up process using email and password provided
     try {
       await signUp.create({
         firstName,
@@ -33,239 +37,266 @@ export default function Page() {
         password,
       })
 
-      // Send user an email with verification code
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
-
-      // Set 'pendingVerification' to true to display second form
-      // and capture code
       setPendingVerification(true)
     } catch (err) {
-      // See https://clerk.com/docs/guides/development/custom-flows/error-handling
-      // for more info on error handling
       console.error(JSON.stringify(err, null, 2))
     }
   }
 
-  // React.useEffect(() => {
-  //   const insertRecord = async () => {
-  //     try {
-  //       const { data: users, error } = await supabase.from('users').insert()
-  //     }
-  //   };
-  // })
-  const insertRecord = async () => {
 
-  }
-
-  // Handle submission of verification form
   const onVerifyPress = async () => {
     if (!isLoaded) return
 
     try {
-      // Use the code the user provided to attempt verification
       const signUpAttempt = await signUp.attemptEmailAddressVerification({
         code,
       })
 
-      // If verification was completed, set the session to active
-      // and redirect the user
       if (signUpAttempt.status === 'complete') {
         await setActive({
           session: signUpAttempt.createdSessionId,
           navigate: async ({ session }) => {
             if (session?.currentTask) {
-              // Handle pending session tasks
-              // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
               console.log(session?.currentTask)
               return
             }
-
             router.replace('/')
           },
         })
       } else {
-        // If the status is not complete, check why. User may need to
-        // complete further steps.
         console.error(JSON.stringify(signUpAttempt, null, 2))
       }
     } catch (err) {
-      // See https://clerk.com/docs/guides/development/custom-flows/error-handling
-      // for more info on error handling
       console.error(JSON.stringify(err, null, 2))
     }
   }
 
+
   if (pendingVerification) {
     return (
-      <ThemedView style={styles.container}>
-        <ThemedText type="title" style={styles.title}>
-          Verify your email
-        </ThemedText>
-        <ThemedText style={styles.description}>
-          A verification code has been sent to your email.
-        </ThemedText>
-        <TextInput
-          style={styles.input}
-          value={code}
-          placeholder="Enter your verification code"
-          placeholderTextColor="#666666"
-          onChangeText={(code) => setCode(code)}
-          keyboardType="numeric"
-        />
-        <Pressable
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-          onPress={onVerifyPress}
+      <View style={styles.mainContainer}>
+        <ImageBackground
+          source={require('../../assets/images/bg.jpg')}
+          style={styles.backgroundImage}
+          resizeMode="cover"
         >
-          <ThemedText style={styles.buttonText}>Verify</ThemedText>
-        </Pressable>
-      </ThemedView>
+          <View style={styles.overlay}>
+            <View style={styles.scrollContent}>
+              <View style={styles.registerBox}>
+                <ThemedText type="title" style={styles.title}>
+                  Verify Email
+                </ThemedText>
+                <ThemedText style={styles.subtitle}>
+                  Enter the code sent to your email
+                </ThemedText>
+
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    value={code}
+                    placeholder="Verification Code"
+                    placeholderTextColor="#999"
+                    onChangeText={setCode}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <Pressable style={styles.button} onPress={onVerifyPress}>
+                  <ThemedText style={styles.buttonText}>Verify</ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </ImageBackground>
+      </View>
     )
   }
 
+
+  // SIGN UP UI (UNCHANGED)
+  // =============================
   return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="title" style={styles.title}>
-        Sign up
-      </ThemedText>
-      <ThemedText style={styles.label}>First name</ThemedText>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={firstName}
-        placeholder="Enter first name"
-        placeholderTextColor="#666666"
-        onChangeText={(firstName) => setFirstName(firstName)}
-        keyboardType="default"
-      />
-      <ThemedText style={styles.label}>Last name</ThemedText>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={lastName}
-        placeholder="Enter last name"
-        placeholderTextColor="#666666"
-        onChangeText={(lastName) => setLastName(lastName)}
-        keyboardType="default"
-      />
-      <ThemedText style={styles.label}>Nickname</ThemedText>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={nickname}
-        placeholder="Enter nickname"
-        placeholderTextColor="#666666"
-        onChangeText={(nickname) => setNickname(nickname)}
-        keyboardType="default"
-      />
-      <ThemedText style={styles.label}>Username</ThemedText>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={username}
-        placeholder="Enter usename"
-        placeholderTextColor="#666666"
-        onChangeText={(username) => setUsername(username)}
-        keyboardType="default"
-      />
-      <ThemedText style={styles.label}>Email address</ThemedText>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        value={emailAddress}
-        placeholder="Enter email"
-        placeholderTextColor="#666666"
-        onChangeText={(email) => setEmailAddress(email)}
-        keyboardType="email-address"
-      />
-      <ThemedText style={styles.label}>Password</ThemedText>
-      <TextInput
-        style={styles.input}
-        value={password}
-        placeholder="Enter password"
-        placeholderTextColor="#666666"
-        secureTextEntry={true}
-        onChangeText={(password) => setPassword(password)}
-      />
-      <ThemedText style={styles.label}>Confirm password</ThemedText>
-      <TextInput
-        style={styles.input}
-        value={confirmPassword}
-        placeholder="Enter confirm password"
-        placeholderTextColor="#666666"
-        secureTextEntry={true}
-        onChangeText={(confirmPassword) => setConfirmPassword(confirmPassword)}
-      />
-      <Pressable
-        style={({ pressed }) => [
-          styles.button,
-          (!emailAddress || !password || !firstName || !lastName || !nickname || !confirmPassword) && styles.buttonDisabled,
-          pressed && styles.buttonPressed,
-        ]}
-        onPress={onSignUpPress}
-        disabled={!emailAddress || !password}
+    <View style={styles.mainContainer}>
+      <ImageBackground
+        source={require('../../assets/images/bg.jpg')}
+        style={styles.backgroundImage}
+        resizeMode="cover"
       >
-        <ThemedText style={styles.buttonText}>Continue</ThemedText>
-      </Pressable>
-      <View style={styles.linkContainer}>
-        <ThemedText>Have an account? </ThemedText>
-        <Link href="/sign-in">
-          <ThemedText type="link">Sign in</ThemedText>
-        </Link>
-      </View>
-    </ThemedView>
+        <View style={styles.overlay}>
+          <ScrollView contentContainerStyle={styles.scrollContent}>
+            <View style={styles.registerBox}>
+              <ThemedText type="title" style={styles.title}>
+                Create Account
+              </ThemedText>
+              <ThemedText style={styles.subtitle}>
+                Join Bill Splitter and start saving time
+              </ThemedText>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.label}>First Name</ThemedText>
+                <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.label}>Last Name</ThemedText>
+                <TextInput style={styles.input} value={lastName} onChangeText={setLastName} />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.label}>Nickname</ThemedText>
+                <TextInput style={styles.input} value={nickname} onChangeText={setNickname} />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.label}>Username</ThemedText>
+                <TextInput style={styles.input} value={username} onChangeText={setUsername} />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.label}>Email Address</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={emailAddress}
+                  onChangeText={setEmailAddress}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.label}>Password</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.label}>Confirm Password</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                />
+              </View>
+
+              <Pressable style={styles.button} onPress={onSignUpPress}>
+                <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
+              </Pressable>
+
+              <Link href="/sign-in" asChild>
+                <Pressable>
+                  <ThemedText style={styles.footerText}>
+                    Already have an account?{' '}
+                    <ThemedText style={styles.link}>Sign In</ThemedText>
+                  </ThemedText>
+                </Pressable>
+              </Link>
+            </View>
+          </ScrollView>
+        </View>
+      </ImageBackground>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    padding: 20,
-    gap: 12,
+    backgroundColor: '#000',
+  },
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  registerBox: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
   },
   title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
     marginBottom: 8,
   },
-  description: {
-    fontSize: 14,
-    marginBottom: 16,
-    opacity: 0.8,
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 25,
+    textAlign: 'center',
+  },
+  inputContainer: {
+    width: '100%',
+    marginBottom: 15,
   },
   label: {
-    fontWeight: '600',
     fontSize: 14,
+    fontWeight: '600',
+    color: '#444',
+    marginBottom: 8,
   },
   input: {
+    width: '100%',
+    height: 50,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 15,
     fontSize: 16,
-    backgroundColor: '#fff',
-    width: 300
+    backgroundColor: '#f9f9f9',
+    color: '#000'
   },
   button: {
-    backgroundColor: '#0a7ea4',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    backgroundColor: 'tomato', 
+    width: '100%',
+    height: 50,
+    borderRadius: 10,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
-    width: 300
+    marginTop: 10,
+    marginBottom: 20,
   },
   buttonPressed: {
-    opacity: 0.7,
+    opacity: 0.8,
   },
   buttonDisabled: {
-    opacity: 0.5,
+    backgroundColor: '#ccc',
   },
   buttonText: {
     color: '#fff',
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
-  linkContainer: {
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 12,
-    alignItems: 'center',
+  footerText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  link: {
+    color: 'tomato',
+    fontWeight: 'bold',
   },
 })
