@@ -5,6 +5,8 @@ import { SignedIn, SignedOut, useSession, useUser } from '@clerk/clerk-expo'
 import { Link } from 'expo-router'
 import { Pressable, StyleSheet } from 'react-native'
 
+// const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
+
 export default function Page() {
   const { user } = useUser()
 
