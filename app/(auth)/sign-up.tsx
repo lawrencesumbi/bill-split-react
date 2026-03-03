@@ -2,7 +2,7 @@ import { ThemedText } from '@/components/themed-text'
 import { supabase } from '@/utils/supabase'
 import { useSignUp } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import validator from 'validator'
 
 import * as React from 'react'
@@ -23,10 +23,13 @@ export default function Page() {
   const [password, setPassword] = React.useState('')
   const [confirmPassword, setConfirmPassword] = React.useState('')
   const [pendingVerification, setPendingVerification] = React.useState(false)
+  const [verificationLoading, setVerificationLoading] = React.useState(false)
   const [code, setCode] = React.useState('')
   const [errors, setErrors] = React.useState({} as any)
   const [clerkErrors, setClerkErrors] = React.useState(Object)
   const [users, setUsers] = React.useState([])
+  const [signupLoading, setSignupLoading] = React.useState(false)
+
 
   React.useEffect(() => {
     const getUsers = async () => {
@@ -94,6 +97,8 @@ export default function Page() {
   const onSignUpPress = async () => {
     if (!isLoaded) return
 
+    setSignupLoading(true)
+
     try {
       await signUp.create({
         firstName,
@@ -105,18 +110,22 @@ export default function Page() {
 
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
       setPendingVerification(true)
+      setSignupLoading(false)
     } catch (err) {
       // See https://clerk.com/docs/guides/development/custom-flows/error-handling
       // for more info on error handling
 
       setClerkErrors(JSON.parse(JSON.stringify(err, null, 2)))
       console.error(JSON.stringify(err, null, 2))
+      setSignupLoading(false)
     }
   }
 
 
   const onVerifyPress = async () => {
     if (!isLoaded) return
+
+    setVerificationLoading(true)
 
     try {
       const signUpAttempt = await signUp.attemptEmailAddressVerification({
@@ -137,17 +146,22 @@ export default function Page() {
               console.log(session?.currentTask)
               return
             }
+
+            setVerificationLoading(false)
+
             router.replace('/')
           },
         })
       } else {
         console.error(JSON.stringify(signUpAttempt, null, 2))
+        setVerificationLoading(false)
       }
     } catch (err) {
       console.error(JSON.stringify(err, null, 2))
+      setVerificationLoading(false)
+
     }
   }
-
 
   if (pendingVerification) {
     return (
@@ -179,7 +193,7 @@ export default function Page() {
                 </View>
 
                 <Pressable style={styles.button} onPress={onVerifyPress}>
-                  <ThemedText style={styles.buttonText}>Verify</ThemedText>
+                  <ThemedText style={styles.buttonText}>{verificationLoading ? <ActivityIndicator color="white" /> : "Verify"}</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -298,7 +312,7 @@ export default function Page() {
               </View>
 
               <Pressable style={styles.button} onPress={handleSubmit}>
-                <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
+                <ThemedText style={styles.buttonText}>{signupLoading ? <ActivityIndicator color="white" /> : "Sign up"}</ThemedText>
               </Pressable>
 
               <Link href="/sign-in" asChild>

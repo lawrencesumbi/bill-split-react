@@ -2,7 +2,7 @@ import { useSignIn } from '@clerk/clerk-expo'
 import type { EmailCodeFactor } from '@clerk/types'
 import { useRouter } from 'expo-router'
 import * as React from 'react'
-import { ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 
 export default function Login() {
   const router = useRouter()
@@ -12,10 +12,16 @@ export default function Login() {
   const [password, setPassword] = React.useState('')
   const [code, setCode] = React.useState('')
   const [showEmailCode, setShowEmailCode] = React.useState(false)
+  const [clerkErrors, setClerkErrors] = React.useState(Object)
+  const [loginLoading, setLoginloading] = React.useState(false)
+
+  let messages = []
 
   // Handle login submission
   const onSignInPress = React.useCallback(async () => {
     if (!isLoaded) return
+
+    setLoginloading(true)
 
     try {
       const signInAttempt = await signIn.create({
@@ -23,7 +29,11 @@ export default function Login() {
         password,
       })
 
+      setLoginloading(false)
+
       if (signInAttempt.status === 'complete') {
+        console.log(signInAttempt.status);
+
         await setActive({
           session: signInAttempt.createdSessionId,
           navigate: async ({ session }) => {
@@ -50,6 +60,7 @@ export default function Login() {
         console.error(JSON.stringify(signInAttempt, null, 2))
       }
     } catch (err) {
+      setClerkErrors(JSON.parse(JSON.stringify(err, null, 2)))
       console.error(JSON.stringify(err, null, 2))
     }
   }, [isLoaded, signIn, setActive, router, emailAddress, password])
@@ -87,8 +98,8 @@ export default function Login() {
   if (showEmailCode) {
     return (
       <View style={styles.mainContainer}>
-        <ImageBackground 
-          source={require('../../assets/images/bg.jpg')} 
+        <ImageBackground
+          source={require('../../assets/images/bg.jpg')}
           style={styles.backgroundImage}
           resizeMode="cover"
         >
@@ -117,8 +128,8 @@ export default function Login() {
   // Default login form
   return (
     <View style={styles.mainContainer}>
-      <ImageBackground 
-        source={require('../../assets/images/bg.jpg')} 
+      <ImageBackground
+        source={require('../../assets/images/bg.jpg')}
         style={styles.backgroundImage}
         resizeMode="cover"
       >
@@ -126,7 +137,11 @@ export default function Login() {
           <View style={styles.loginBox}>
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Log in to split your bills</Text>
-
+            {
+              messages.map((message: any, index: number) => (
+                <Text key={index} style={styles.errorMessage}>{message.longMessage}</Text>
+              ))
+            }
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Email Address or Username</Text>
               <TextInput
@@ -160,7 +175,7 @@ export default function Login() {
               onPress={onSignInPress}
               disabled={!emailAddress || !password}
             >
-              <Text style={styles.buttonText}>Login</Text>
+              <Text style={styles.buttonText}>{loginLoading ? <ActivityIndicator color="white" /> : "Login"}</Text>
             </Pressable>
 
             <Pressable onPress={() => router.push('/sign-up')}>
