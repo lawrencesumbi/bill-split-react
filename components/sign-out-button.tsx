@@ -1,16 +1,23 @@
 import { ThemedText } from '@/components/themed-text'
 import { useClerk } from '@clerk/clerk-expo'
 import { useRouter } from 'expo-router'
-import { Pressable, StyleSheet } from 'react-native'
+import { useState } from 'react'
+import { ActivityIndicator, Pressable, StyleSheet } from 'react-native'
 
 export const SignOutButton = () => {
   // Use `useClerk()` to access the `signOut()` function
   const { signOut } = useClerk()
   const router = useRouter()
 
+  const [logoutLoading, setLogoutLoading] = useState(false)
+
   const handleSignOut = async () => {
+
+    setLogoutLoading(true)
+
     try {
       await signOut()
+      setLogoutLoading(false)
       // Redirect to your desired page
       router.replace('/')
     } catch (err) {
@@ -25,7 +32,7 @@ export const SignOutButton = () => {
       style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
       onPress={handleSignOut}
     >
-      <ThemedText style={styles.buttonText}>Sign out</ThemedText>
+      <ThemedText style={styles.buttonText}>{logoutLoading ? <ActivityIndicator color="white" /> : "Logout"}</ThemedText>
     </Pressable>
   )
 }

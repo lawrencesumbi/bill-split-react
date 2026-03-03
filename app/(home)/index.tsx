@@ -41,6 +41,10 @@ export default function Page() {
                 <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
               </Link>
             </Pressable>
+            {/* <View style={{ marginTop: 20 }}>
+              <SignOutButton />
+            </View> */}
+
           </SignedOut>
 
           {/* Signed In UI */}
