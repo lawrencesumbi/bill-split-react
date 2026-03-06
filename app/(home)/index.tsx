@@ -1,14 +1,16 @@
-import { SignOutButton } from '@/components/sign-out-button'
 import { ThemedText } from '@/components/themed-text'
 import { SignedIn, SignedOut, useSession, useUser } from '@clerk/clerk-expo'
 import { Link } from 'expo-router'
+import * as React from 'react'
 import { ImageBackground, Pressable, StyleSheet, View } from 'react-native'
+
 
 // const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
 
 export default function Page() {
   const { user } = useUser()
   const { session } = useSession()
+
   console.log(session?.currentTask)
 
   return (
@@ -30,6 +32,7 @@ export default function Page() {
 
           {/* Signed Out UI */}
           <SignedOut>
+            <View style={styles.view}>
             <Pressable style={styles.button}>
               <Link href="/(auth)/sign-in" style={styles.buttonText}>
                 <ThemedText style={styles.buttonText}>Sign In</ThemedText>
@@ -41,21 +44,19 @@ export default function Page() {
                 <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
               </Link>
             </Pressable>
+            </View>
             {/* <View style={{ marginTop: 20 }}>
               <SignOutButton />
             </View> */}
-
           </SignedOut>
 
           {/* Signed In UI */}
           <SignedIn>
-            <ThemedText style={styles.welcomeText}>
-              Hello {user?.emailAddresses[0].emailAddress}
-            </ThemedText>
-
-            <View style={{ marginTop: 20 }}>
-              <SignOutButton />
-            </View>
+            <Pressable style={styles.button}>
+              <Link href="/(dashboardpage)/dashboard" style={styles.buttonText}>
+                <ThemedText style={styles.buttonText}>Dashboard</ThemedText>
+              </Link>
+            </Pressable>
           </SignedIn>
 
         </View>
@@ -110,5 +111,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#fff',
     marginTop: 20,
+  },
+  view: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10
   }
 })

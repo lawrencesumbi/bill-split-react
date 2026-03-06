@@ -1,9 +1,10 @@
 import { ThemedText } from '@/components/themed-text'
 import { supabase } from '@/utils/supabase'
-import { useSignUp } from '@clerk/clerk-expo'
+import { useOrganization, useSignUp } from '@clerk/clerk-expo'
 import { Link, useRouter } from 'expo-router'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import validator from 'validator'
+
 
 import * as React from 'react'
 import {
@@ -13,6 +14,7 @@ import {
 export default function Page() {
   const { isLoaded, signUp, setActive } = useSignUp()
   const router = useRouter()
+  const { organization } = useOrganization()
 
   const [data, setData] = React.useState([])
   const [firstName, setFirstName] = React.useState('')
@@ -30,6 +32,10 @@ export default function Page() {
   const [users, setUsers] = React.useState([])
   const [signupLoading, setSignupLoading] = React.useState(false)
 
+  console.log(organization?.getRoles({
+    pageSize: 20,
+    initialPage: 1
+  }));
 
   React.useEffect(() => {
     const getUsers = async () => {
@@ -81,6 +87,7 @@ export default function Page() {
     if (validator.isEmpty(username)) errors.username = "Username is required."
     if (validator.isEmpty(emailAddress)) errors.emailAddress = "Email address is required."
     if (!validator.isEmail(emailAddress)) errors.emailFormat = "Email must be a correct format."
+    if (validator.isEmpty(password)) errors.password = "Password is required."
     if (password.length < 8) errors.passwordTooShort = "Password must be at least 8 characters."
     if (password.length > 16) errors.passwordTooLong = "Password must not exceed 16 characters."
     if (!validator.isStrongPassword(password)) errors.passwordTooWeak = "Password must be a combination of at least one upper case and lower case characters, special characters and number."
@@ -159,7 +166,6 @@ export default function Page() {
     } catch (err) {
       console.error(JSON.stringify(err, null, 2))
       setVerificationLoading(false)
-
     }
   }
 
@@ -287,6 +293,9 @@ export default function Page() {
                   onChangeText={setPassword}
                   secureTextEntry
                 />
+                {
+                  errors.password ? <Text style={styles.errorMessage}>{errors.password}</Text> : null
+                }
                 {
                   errors.passwordTooShort ? <Text style={styles.errorMessage}>{errors.passwordTooShort}</Text> : null
                 }

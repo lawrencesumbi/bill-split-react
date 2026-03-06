@@ -1,4 +1,4 @@
-import { useSignIn } from '@clerk/clerk-expo'
+import { useAuth, useSignIn } from '@clerk/clerk-expo'
 import type { EmailCodeFactor } from '@clerk/types'
 import { useRouter } from 'expo-router'
 import * as React from 'react'
@@ -7,7 +7,7 @@ import { ActivityIndicator, ImageBackground, Pressable, StyleSheet, Text, TextIn
 export default function Login() {
   const router = useRouter()
   const { signIn, setActive, isLoaded } = useSignIn()
-
+  const { isSignedIn } = useAuth()
   const [emailAddress, setEmailAddress] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [code, setCode] = React.useState('')
@@ -15,7 +15,13 @@ export default function Login() {
   const [clerkErrors, setClerkErrors] = React.useState(Object)
   const [loginLoading, setLoginloading] = React.useState(false)
 
+  console.log(isSignedIn);
+
   let messages = []
+
+  if (clerkErrors.errors) {
+    messages = clerkErrors.errors
+  }
 
   // Handle login submission
   const onSignInPress = React.useCallback(async () => {
@@ -41,7 +47,7 @@ export default function Login() {
               console.log(session?.currentTask)
               return
             }
-            router.replace('/')
+            router.replace('/dashboard')
           },
         })
       } else if (signInAttempt.status === 'needs_second_factor') {
@@ -57,9 +63,11 @@ export default function Login() {
           setShowEmailCode(true)
         }
       } else {
+        setLoginloading(false)
         console.error(JSON.stringify(signInAttempt, null, 2))
       }
     } catch (err) {
+      setLoginloading(false)
       setClerkErrors(JSON.parse(JSON.stringify(err, null, 2)))
       console.error(JSON.stringify(err, null, 2))
     }
@@ -83,7 +91,7 @@ export default function Login() {
               console.log(session?.currentTask)
               return
             }
-            router.replace('/')
+            router.replace('/dashboard')
           },
         })
       } else {
