@@ -1,7 +1,7 @@
+import { SignOutButton } from '@/components/sign-out-button';
 import { ThemedText } from '@/components/themed-text';
-import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { ScrollView, StyleSheet, TextInput } from 'react-native';
 
 export default function Profile() {
   const [lastName, setLastName] = useState('');
@@ -81,10 +81,7 @@ export default function Profile() {
       />
 
       {/* Logout Button */}
-      <Pressable style={styles.logoutBtn}>
-        <Ionicons name="log-out-outline" size={20} color="#fff" />
-        <ThemedText style={styles.logoutText}>Logout</ThemedText>
-      </Pressable>
+      <SignOutButton />
 
     </ScrollView>
   );
