@@ -31,7 +31,7 @@ export default function ForgotPassword() {
 
   const handleSubmit = () => {
     if(validateForm()) {
-      handleReset()
+      onReset()
     }
   }
 
@@ -217,7 +217,7 @@ export default function ForgotPassword() {
                     />
                   </View>
 
-                  <Pressable style={styles.button} onPress={onReset}>
+                  <Pressable style={styles.button} onPress={handleSubmit}>
                     <Text style={styles.buttonText}>{codeSubmitLoading ? <ActivityIndicator color="white"/> : "Verify Code"}</Text>
                   </Pressable>
 

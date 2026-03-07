@@ -1,14 +1,14 @@
 import { ThemedText } from '@/components/themed-text'
-import { SignedIn, SignedOut, useSession, useUser } from '@clerk/clerk-expo'
+import { SignedIn, SignedOut, useAuth, useSession, useUser } from '@clerk/clerk-expo'
 import { Link } from 'expo-router'
 import * as React from 'react'
 import { ImageBackground, Pressable, StyleSheet, View } from 'react-native'
-
 
 // const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
 
 export default function Page() {
   const { user } = useUser()
+  const { isSignedIn } = useAuth()
   const { session } = useSession()
 
   console.log(session?.currentTask)

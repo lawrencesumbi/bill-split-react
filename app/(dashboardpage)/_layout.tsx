@@ -1,11 +1,17 @@
 import { ThemedText } from '@/components/themed-text';
+import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { Slot, usePathname, useRouter } from 'expo-router';
+import { Redirect, Slot, usePathname, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 export default function DashboardLayout() {
   const router = useRouter();
   const pathname = usePathname();
+  const { isSignedIn } = useAuth()
+
+  if(!isSignedIn) {
+    return <Redirect href={'/sign-in'}/>
+  }
 
   return (
     <View style={styles.mainContainer}>

@@ -1,4 +1,4 @@
-import { useAuth, useSignIn } from '@clerk/clerk-expo'
+import { useSignIn } from '@clerk/clerk-expo'
 import type { EmailCodeFactor } from '@clerk/types'
 import { useRouter } from 'expo-router'
 import * as React from 'react'
@@ -7,15 +7,13 @@ import { ActivityIndicator, ImageBackground, Pressable, StyleSheet, Text, TextIn
 export default function Login() {
   const router = useRouter()
   const { signIn, setActive, isLoaded } = useSignIn()
-  const { isSignedIn } = useAuth()
   const [emailAddress, setEmailAddress] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [code, setCode] = React.useState('')
   const [showEmailCode, setShowEmailCode] = React.useState(false)
   const [clerkErrors, setClerkErrors] = React.useState(Object)
   const [loginLoading, setLoginloading] = React.useState(false)
-
-  console.log(isSignedIn);
+  const [verifyLoading, setVerifyLoading] = React.useState(false)
 
   let messages = []
 
@@ -77,6 +75,8 @@ export default function Login() {
   const onVerifyPress = React.useCallback(async () => {
     if (!isLoaded) return
 
+    setVerifyLoading(true)
+
     try {
       const signInAttempt = await signIn.attemptSecondFactor({
         strategy: 'email_code',
@@ -96,8 +96,10 @@ export default function Login() {
         })
       } else {
         console.error(JSON.stringify(signInAttempt, null, 2))
+        setVerifyLoading(false)
       }
     } catch (err) {
+      setVerifyLoading(false)
       console.error(JSON.stringify(err, null, 2))
     }
   }, [isLoaded, signIn, setActive, router, code])
