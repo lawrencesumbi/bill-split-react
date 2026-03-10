@@ -434,10 +434,7 @@ const router = useRouter();
 >
   <Ionicons name="create" size={18} color="#666" />
 </Pressable>
-                                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" /></Pressable>
-                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="trash" size={18} color="#FF3B30" /></Pressable>
-                <Pressable style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}><Ionicons name="create" size={18} color="#666" /></Pressable>
-                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" /></Pressable>
+                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" onPress={() => archiveBill(bill.id)} /></Pressable>
                 <Pressable
                     style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
                     onPress={() => deleteBill(bill.id)}
