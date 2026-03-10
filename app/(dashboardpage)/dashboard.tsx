@@ -46,69 +46,101 @@ const router = useRouter();
 
 
     const createBill = async () => {
-        if (!billName) { alert("Bill name required"); return; }
+    if (!billName) { alert("Bill name required"); return; }
 
-        const { data, error } = await supabase
+    const { data, error } = await supabase
         .from("bills")
         .insert([{ name: billName, invite_code: inviteCode, created_by: user?.id }])
-        .select().single();
+        .select()
+        .single();
 
-        if (error) { alert(error.message); return; }
+    if (error) { 
+        alert(error.message); 
+        return; 
+    }
 
-        const billId = data.id;
-        // Add creator
-        await supabase.from("bill_members").insert({ bill_id: billId, user_id: user?.id });
-
-        // Add selected members (handling both registered users and guests)
-        if (selectedInvolvedPeople.length > 0) {
+    const billId = data.id;
+    
+    // Only add selected members (NO automatic creator addition)
+    if (selectedInvolvedPeople.length > 0) {
         const memberInserts = [];
 
         for (const person of selectedInvolvedPeople) {
+            
+            // Check if this is a registered user (has UUID format or 'r-' prefix)
+            const isRegisteredUser = person.uniqueKey?.startsWith('r-') || 
+                                    (person.id && person.id.includes('-') && person.id.length > 20);
 
-            // REGISTERED USER
-            if (person.type === "registered") {
-            memberInserts.push({
-                bill_id: billId,
-                user_id: person.id,
-                guest_id: null
-            });
-            }
+            if (isRegisteredUser) {
+                // REGISTERED USER
+                memberInserts.push({
+                    bill_id: billId,
+                    user_id: person.id,
+                    guest_id: null
+                });
+            } else {
+                // GUEST USER
+                // Check if guest already exists
+                const { data: existingGuest } = await supabase
+                    .from("guest_users")
+                    .select("id")
+                    .eq("email", person.email)
+                    .maybeSingle();
 
-            // GUEST USER
-            if (person.type === "guest") {
+                let guestId;
 
-            // insert guest first
-            const { data: guestData, error: guestError } = await supabase
-                .from("guest_users")
-                .insert({
-                first_name: person.name.split(" ")[0],
-                last_name: person.name.split(" ")[1] || "",
-                email: person.email
-                })
-                .select()
-                .single();
+                if (existingGuest) {
+                    guestId = existingGuest.id;
+                } else {
+                    // Insert new guest
+                    const nameParts = person.name.split(' ');
+                    const firstName = nameParts[0] || '';
+                    const lastName = nameParts.slice(1).join(' ') || '';
 
-            if (guestError) {
-                console.error(guestError);
-                continue;
-            }
+                    const { data: guestData, error: guestError } = await supabase
+                        .from("guest_users")
+                        .insert({
+                            first_name: firstName,
+                            last_name: lastName,
+                            email: person.email
+                        })
+                        .select()
+                        .single();
 
-            // add to bill_members
-            memberInserts.push({
-                bill_id: billId,
-                user_id: null,
-                guest_id: guestData.id
-            });
+                    if (guestError) {
+                        console.error("Error creating guest:", guestError);
+                        continue;
+                    }
+                    
+                    guestId = guestData.id;
+                }
+
+                memberInserts.push({
+                    bill_id: billId,
+                    user_id: null,
+                    guest_id: guestId
+                });
             }
         }
 
-        await supabase.from("bill_members").insert(memberInserts);
-        }
+        // Insert all selected members
+        if (memberInserts.length > 0) {
+            const { error: membersError } = await supabase
+                .from("bill_members")
+                .insert(memberInserts);
 
-        loadBills();
-        setShowAddModal(false);
-        resetForm();
-    };
+            if (membersError) {
+                console.error("Error inserting members:", membersError);
+                alert("Error adding members to bill");
+                return;
+            }
+        }
+    }
+
+    loadBills();
+    setShowAddModal(false);
+    resetForm();
+};
 
     const loadBills = async () => {
         const { data, error } = await supabase
@@ -184,7 +216,6 @@ const router = useRouter();
             id: guestEmail,
             name: `${guestFirst} ${guestLast}`.trim(),
             email: guestEmail,
-            type: 'guest',
             uniqueKey: `g-${guestEmail}-${Date.now()}`
         };
         setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
@@ -194,6 +225,14 @@ const router = useRouter();
     };
 
     useEffect(() => { loadBills(); }, []);
+
+     const getDisplayName = (person) => {
+        if (person.type === 'registered') {
+            return person.nickname || person.name || 'Unknown User';
+        } else {
+            return person.name || person.first_name || 'Unknown Guest';
+        }
+        };
 
     // --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
     const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress }) => {
@@ -214,43 +253,42 @@ const router = useRouter();
         }, [visible]);
 
         const loadUsersFromSupabase = async () => {
-        setLoading(true);
-        try {
-            // 1. Fetch Registered Users (simplified Clerk sync example)
-            const { data: registeredData } = await supabase.from('clerk_users').select('clerk_user_id, nickname');
-            const formattedRegistered = (registeredData || []).map(u => ({
-            id: u.clerk_user_id,
-            name: u.nickname || 'Unknown User',
-            type: 'registered',
-            uniqueKey: `r-${u.clerk_user_id}`
-            }));
+  setLoading(true);
+  try {
+    // 1. Fetch Registered Users from clerk_users
+    const { data: registeredData } = await supabase
+      .from('clerk_users')
+      .select('clerk_user_id, nickname');
+    
+    const formattedRegistered = (registeredData || []).map(u => ({
+      id: u.clerk_user_id,
+      name: u.nickname || 'Unknown User',
+      uniqueKey: `r-${u.clerk_user_id}`
+    }));
 
-            // 2. Fetch Previously Created Guests (Assuming 'bill_members' table stores distinct guests)
-            const { data: guestData } = await supabase
-            .from('bill_members')
-            .select('guest_name, guest_email')
-            .is('user_id', null) // Only guests
-            .not('guest_name', 'is', null); // Must have a name
+    console.log(formattedRegistered)
 
-            // Make unique by email
-            const uniqueGuests = Array.from(new Map((guestData || []).map(item => [item.guest_email, item])).values());
-            const formattedGuests = uniqueGuests.map(g => ({
-            id: g.guest_email, // Using email as temporary ID for guests
-            name: g.guest_name,
-            email: g.guest_email,
-            type: 'guest',
-            uniqueKey: `g-${g.guest_email}`
-            }));
+    // 2. Fetch Guests from separate guests table
+    const { data: guestsData } = await supabase
+      .from('guest_users') // Assuming you have a 'guests' table
+      .select('id, first_name, last_name, email')
 
-            const combined = [...formattedRegistered, ...formattedGuests];
-            setAllPotentialUsers(combined);
-            applyFilters(combined, searchQuery, filter); // Apply initial display
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-        };
+    const formattedGuests = (guestsData || []).map(g => ({
+      first_name: g.first_name,
+      last_name: g.last_name,
+      email: g.email,
+      uniqueKey: `g-${g.id}`
+    }));
+
+    const combined = [...formattedRegistered, ...formattedGuests];
+    setAllPotentialUsers(combined);
+    applyFilters(combined, searchQuery, filter);
+  } catch (e) {
+    console.error('Error loading users:', e);
+  } finally {
+    setLoading(false);
+  }
+};
 
         const applyFilters = (users, query, currentFilter) => {
         let filtered = users;
@@ -352,7 +390,7 @@ const router = useRouter();
                     </View>
                 ) : (
                     <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true} contentContainerStyle={{paddingBottom: 10}}>
-                    {displayUsers.map((userItem) => {
+                    {displayUsers.filter(d => d.id !== user.id).map((userItem) => {
                         const isSelected = localSelection.some(u => u.uniqueKey === userItem.uniqueKey);
                         return (
                         <Pressable 
@@ -365,9 +403,9 @@ const router = useRouter();
                             size={28} 
                             color={isSelected ? "tomato" : "#AEAEB2"} 
                             />
-                            <View style={styles.userInfo}>
+                            <View key={userItem.uniqueKey || userItem.id} style={styles.userInfo}>
                             <ThemedText style={[styles.userNameText, isSelected && styles.textSelected]}>
-                                {userItem.name}
+                                {getDisplayName(userItem)}
                             </ThemedText>
                             {userItem.type === 'guest' && <ThemedText style={styles.userSubtext}>{userItem.email}</ThemedText>}
                             </View>
@@ -506,7 +544,7 @@ const router = useRouter();
                             size={24} 
                             color="tomato" 
                             />
-                            <ThemedText style={styles.personRowText}>{p.name}</ThemedText>
+                            <ThemedText style={styles.personRowText}>{getDisplayName(p)}</ThemedText>
                         </View>
                         ))
                     )}
