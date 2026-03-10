@@ -1,5 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
-import { supabase } from "@/utils/supabase";
+import { supabase } from '@/utils/supabase';
+import { useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -12,10 +13,13 @@ type Expense = { id: string; name: string; amount: string; paidBy: string; invol
 
 export default function ViewBill() {
   const router = useRouter();
+  const { user } = useUser();
   const { billId, billName } = useLocalSearchParams();
   
   const [guests, setGuests] = useState<Guest[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+
+  const [involved, setInvolved] = useState([]);
   
   // Modal Visibility States
   const [showGuestModal, setShowGuestModal] = useState(false);
@@ -46,6 +50,23 @@ export default function ViewBill() {
     setShowGuestModal(false);
   };
 
+  const loadInvolved = async () => {
+    const { data, error } = await supabase
+    .from("bill_members")
+    .select(`*,
+      clerk_users:user_id (
+        nickname
+      )
+      `)
+    .eq("bill_id", billId);
+
+    if(!error) setInvolved(data);
+  }
+
+  
+  React.useEffect(() => { loadInvolved(); }, []);
+
+  const handleAddExpense = () => {
   const fetchExpenses = async () => {
     try {
       const { data, error } = await supabase
@@ -216,10 +237,10 @@ export default function ViewBill() {
             <Pressable style={styles.addPersonBtn} onPress={() => setShowGuestModal(true)}><Ionicons name="person-add" size={16} color="tomato" /></Pressable>
           </View>
           <ScrollView>
-            {guests.map(guest => (
-              <View key={guest.id} style={styles.modernPersonRow}>
-                <View style={styles.modernAvatar}><ThemedText style={styles.avatarText}>{guest.firstName[0]}</ThemedText></View>
-                <ThemedText style={styles.personName}>{guest.firstName}</ThemedText>
+            {involved.filter(i => i.user_id !== user?.id).map(involve => (
+              <View key={involve.id} style={styles.modernPersonRow}>
+                {/* <View style={styles.modernAvatar}><ThemedText style={styles.avatarText}>{involve.clerk_users.nickname}</ThemedText></View> */}
+                <ThemedText style={styles.personName}>{involve.clerk_users.nickname}</ThemedText>
               </View>
             ))}
           </ScrollView>

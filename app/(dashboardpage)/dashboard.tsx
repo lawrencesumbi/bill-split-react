@@ -44,15 +44,6 @@ const router = useRouter();
         setShowSelectPeopleModal(true);  // Return to the list modal
     };
 
-    const archiveBill = async (billId: number) => {
-      console.log(billId);
-        const { error } = await supabase.from('bills').update({ status: 'archived'}).eq('id', billId);
-
-        if(error) {
-          console.error(error.message);
-          return;
-        }
-    }
 
     const createBill = async () => {
         if (!billName) { alert("Bill name required"); return; }
@@ -128,6 +119,18 @@ const router = useRouter();
         .order("created_at", { ascending: false });
         if (!error) setBills(data);
     };
+
+    const archiveBill = async (billId: number) => {
+        const { error } = await supabase.from('bills').update({ status: 'archived'}).eq('id', billId);
+
+        if(error) {
+          console.error(error.message);
+          return;
+        }
+
+        loadBills();
+    }
+
 
     const deleteBill = async (billId) => {
         const confirmDelete = confirm("Are you sure you want to delete this bill?");
