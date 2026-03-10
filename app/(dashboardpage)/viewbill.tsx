@@ -50,18 +50,30 @@ export default function ViewBill() {
     setShowGuestModal(false);
   };
 
+       const getDisplayName = (person) => {
+        if (person.clerk_users !== null) {
+            return person.clerk_users.nickname || person.name || 'Unknown User';
+        } else {
+            return person.name || person.guest_users.first_name || 'Unknown Guest';
+        }
+        };
+
   const loadInvolved = async () => {
     const { data, error } = await supabase
     .from("bill_members")
     .select(`*,
       clerk_users:user_id (
         nickname
+      ),
+      guest_users:guest_id (
+        first_name
       )
       `)
     .eq("bill_id", billId);
 
     if(!error) setInvolved(data);
   }
+
 
   
   React.useEffect(() => { loadInvolved(); }, []);
@@ -153,7 +165,7 @@ export default function ViewBill() {
       const newExp: Expense = {
         id: data.id,
         name: data.name,
-        amount: data.cost.toString(),
+        cost: data.cost.toString(),
         paidBy: data.paid_by,
         involved: finalInvolved,
       };
@@ -179,6 +191,8 @@ export default function ViewBill() {
   const handleCustomAmountChange = (id: string, value: string) => {
     setCustomAmounts(prev => ({ ...prev, [id]: value }));
   };
+
+  console.log(involved)
 
   // Helper to calculate remaining for Custom Modal
   const totalAllocated = Object.values(customAmounts).reduce((acc, val) => acc + (parseFloat(val) || 0), 0);
@@ -239,7 +253,7 @@ export default function ViewBill() {
             {involved.filter(i => i.user_id !== user?.id).map(involve => (
               <View key={involve.id} style={styles.modernPersonRow}>
                 {/* <View style={styles.modernAvatar}><ThemedText style={styles.avatarText}>{involve.clerk_users.nickname}</ThemedText></View> */}
-                <ThemedText style={styles.personName}>{involve.clerk_users.nickname}</ThemedText>
+                <ThemedText style={styles.personName}>{getDisplayName(involve)}</ThemedText>
               </View>
             ))}
           </ScrollView>
@@ -273,9 +287,9 @@ export default function ViewBill() {
               </Pressable>
               {showPaidByDropdown && (
                 <View style={styles.dropdownMenu}>
-                  {guests.map(g => (
-                    <Pressable key={g.id} style={styles.dropdownItem} onPress={() => {setExpPaidBy(g.firstName); setShowPaidByDropdown(false);}}>
-                      <ThemedText>{g.firstName}</ThemedText>
+                  {involved.map(g => (
+                    <Pressable key={g.id} style={styles.dropdownItem} onPress={() => {setExpPaidBy(getDisplayName(g)); setShowPaidByDropdown(false);}}>
+                      <ThemedText>{getDisplayName(g)}</ThemedText>
                     </Pressable>
                   ))}
                 </View>
@@ -284,10 +298,10 @@ export default function ViewBill() {
 
             <ThemedText style={styles.inputLabel}>With:</ThemedText>
             <ScrollView style={styles.involvedListContainer}>
-              {guests.map(g => (
+              {involved.map(g => (
                 <Pressable key={g.id} onPress={() => toggleInvolved(g.id)} style={styles.involvedRow}>
                   <Ionicons name={selectedInvolved.includes(g.id) ? "checkbox" : "square-outline"} size={20} color="tomato" />
-                  <ThemedText style={{marginLeft: 10}}>{g.firstName}</ThemedText>
+                  <ThemedText style={{marginLeft: 10}}>{getDisplayName(g)}</ThemedText>
                 </Pressable>
               ))}
             </ScrollView>
