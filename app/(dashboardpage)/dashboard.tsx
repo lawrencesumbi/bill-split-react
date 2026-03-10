@@ -2,357 +2,601 @@ import { ThemedText } from '@/components/themed-text';
 import { supabase } from "@/utils/supabase";
 import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-export default function Dashboard() {
+    // --- MAIN DASHBOARD COMPONENT ---
+    export default function Dashboard() {
+    const { user } = useUser();
 
-  const router = useRouter();
-  const { user } = useUser();
+    const [bills, setBills] = useState([]);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [billName, setBillName] = useState("");
+    const [inviteCode, setInviteCode] = useState(generateInviteCode());
+    const [showAddGuestModal, setShowAddGuestModal] = useState(false);
 
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [billName, setBillName] = useState("");
-  const [bills, setBills] = useState([]);
-  const [inviteCode, setInviteCode] = useState(generateInviteCode());
+    const [guestFirst, setGuestFirst] = useState("");
+    const [guestLast, setGuestLast] = useState("");
+    const [guestEmail, setGuestEmail] = useState("");
 
-  const [guests, setGuests] = useState([]);
-
-  const [guestFirstName, setGuestFirstName] = useState("");
-  const [guestLastName, setGuestLastName] = useState("");
-  const [guestEmail, setGuestEmail] = useState("");
-  const [guestContact, setGuestContact] = useState("");
-
-  function generateInviteCode() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  }
-
-  const addGuest = () => {
-
-    if (!guestFirstName || !guestLastName) {
-      alert("Guest name required");
-      return;
+    // Confirmed people for the new bill
+    const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([]);
+    
+    // Controls the new wireframe "Select People" modal
+    const [showSelectPeopleModal, setShowSelectPeopleModal] = useState(false);
+   
+    function generateInviteCode() {
+        return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    const newGuest = {
-      firstName: guestFirstName,
-      lastName: guestLastName,
-      email: guestEmail,
-      contact: guestContact
+    // --- LOGIC: TRANSITION FROM SELECT TO GUEST ---
+    const openGuestModal = () => {
+        setShowSelectPeopleModal(false); // Hide the list modal
+        setShowAddGuestModal(true);      // Show the guest form
     };
 
-    setGuests([...guests, newGuest]);
+    const closeGuestModal = () => {
+        setShowAddGuestModal(false);     
+        setShowSelectPeopleModal(true);  // Return to the list modal
+    };
 
-    setGuestFirstName("");
-    setGuestLastName("");
-    setGuestEmail("");
-    setGuestContact("");
-  };
+    const createBill = async () => {
+        if (!billName) { alert("Bill name required"); return; }
 
-  const createBill = async () => {
+        const { data, error } = await supabase
+        .from("bills")
+        .insert([{ name: billName, invite_code: inviteCode, created_by: user?.id }])
+        .select().single();
 
-    if (!billName) {
-      alert("Bill name required");
-      return;
-    }
+        if (error) { alert(error.message); return; }
 
-    const { data, error } = await supabase
-      .from("bills")
-      .insert([
-        {
-          name: billName,
-          invite_code: inviteCode,
-          created_by: user?.id
+        const billId = data.id;
+        // Add creator
+        await supabase.from("bill_members").insert({ bill_id: billId, user_id: user?.id });
+
+        // Add selected members (handling both registered users and guests)
+        if (selectedInvolvedPeople.length > 0) {
+        const memberInserts = selectedInvolvedPeople.map((person) => ({
+            bill_id: billId,
+            user_id: person.type === 'registered' ? person.id : null,
+            guest_name: person.type === 'guest' ? person.name : null,
+            guest_email: person.type === 'guest' ? person.email : null,
+        }));
+        await supabase.from("bill_members").insert(memberInserts);
         }
-      ])
-      .select()
-      .single();
 
-    if (error) {
-      console.log(error);
-      alert(error.message);
-      return;
-    }
+        loadBills();
+        setShowAddModal(false);
+        resetForm();
+    };
 
-    const billId = data.id;
+    const loadBills = async () => {
+        const { data, error } = await supabase
+        .from("bills")
+        .select("*")
+        .eq("created_by", user?.id)
+        .order("created_at", { ascending: false });
+        if (!error) setBills(data);
+    };
 
-    await supabase.from("bill_members").insert({
-      bill_id: billId,
-      user_id: user?.id,
-      guest_name: null,
-      guest_email: null
-    });
+    const resetForm = () => {
+        setBillName("");
+        setSelectedInvolvedPeople([]);
+        setInviteCode(generateInviteCode());
+    };
 
-    if (guests.length > 0) {
+    const handleAddGuestSubmit = () => {
+        if (!guestFirst || !guestEmail) {
+            alert("First name and Email are required");
+            return;
+        }
+        const newGuest = {
+            id: guestEmail,
+            name: `${guestFirst} ${guestLast}`.trim(),
+            email: guestEmail,
+            type: 'guest',
+            uniqueKey: `g-${guestEmail}-${Date.now()}`
+        };
+        setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
+        setGuestFirst(""); setGuestLast(""); setGuestEmail("");
+        setShowAddGuestModal(false);
+        setShowSelectPeopleModal(true);
+    };
 
-      const guestMembers = guests.map((guest) => ({
-        bill_id: billId,
-        user_id: null,
-        guest_name: `${guest.firstName} ${guest.lastName}`,
-        guest_email: guest.email
-      }));
+    useEffect(() => { loadBills(); }, []);
 
-      const { error: memberError } = await supabase
-        .from("bill_members")
-        .insert(guestMembers);
+    // --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
+    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress }) => {
+        const [loading, setLoading] = useState(true);
+        const [allPotentialUsers, setAllPotentialUsers] = useState([]); // Master list
+        const [displayUsers, setDisplayUsers] = useState([]); // Filtered list
+        const [searchQuery, setSearchQuery] = useState("");
+        const [filter, setFilter] = useState('all'); // all, registered, guest
+        
+        // Tracks selections within this modal session before confirmation
+        const [localSelection, setLocalSelection] = useState(currentSelection);
 
-      if (memberError) {
-        console.log(memberError);
-        alert(memberError.message);
-        return;
-      }
-    }
+        useEffect(() => {
+        if (visible) {
+            loadUsersFromSupabase();
+            setLocalSelection(currentSelection); // Sync selection when opening
+        }
+        }, [visible]);
 
-    loadBills();
+        const loadUsersFromSupabase = async () => {
+        setLoading(true);
+        try {
+            // 1. Fetch Registered Users (simplified Clerk sync example)
+            const { data: registeredData } = await supabase.from('clerk_users').select('clerk_user_id, nickname');
+            const formattedRegistered = (registeredData || []).map(u => ({
+            id: u.clerk_user_id,
+            name: u.nickname || 'Unknown User',
+            type: 'registered',
+            uniqueKey: `r-${u.clerk_user_id}`
+            }));
 
-    setBillName("");
-    setGuests([]);
-    setInviteCode(generateInviteCode());
-    setShowAddModal(false);
-  };
+            // 2. Fetch Previously Created Guests (Assuming 'bill_members' table stores distinct guests)
+            const { data: guestData } = await supabase
+            .from('bill_members')
+            .select('guest_name, guest_email')
+            .is('user_id', null) // Only guests
+            .not('guest_name', 'is', null); // Must have a name
 
-  const loadBills = async () => {
+            // Make unique by email
+            const uniqueGuests = Array.from(new Map((guestData || []).map(item => [item.guest_email, item])).values());
+            const formattedGuests = uniqueGuests.map(g => ({
+            id: g.guest_email, // Using email as temporary ID for guests
+            name: g.guest_name,
+            email: g.guest_email,
+            type: 'guest',
+            uniqueKey: `g-${g.guest_email}`
+            }));
 
-    const { data, error } = await supabase
-      .from("bills")
-      .select("*")
-      .eq("created_by", user?.id)
-      .order("created_at", { ascending: false });
+            const combined = [...formattedRegistered, ...formattedGuests];
+            setAllPotentialUsers(combined);
+            applyFilters(combined, searchQuery, filter); // Apply initial display
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+        };
 
-    if (error) {
-      console.log(error);
-      return;
-    }
+        const applyFilters = (users, query, currentFilter) => {
+        let filtered = users;
+        // Filter by type
+        if (currentFilter !== 'all') {
+            filtered = filtered.filter(u => u.type === currentFilter);
+        }
+        // Filter by search query
+        if (query) {
+            filtered = filtered.filter(u => 
+            u.name.toLowerCase().includes(query.toLowerCase()) ||
+            (u.email && u.email.toLowerCase().includes(query.toLowerCase()))
+            );
+        }
+        setDisplayUsers(filtered);
+        };
 
-    setBills(data);
-  };
+        // Handle Search input change
+        const handleSearch = (query) => {
+        setSearchQuery(query);
+        applyFilters(allPotentialUsers, query, filter);
+        };
 
-  useEffect(() => {
-    loadBills();
-  }, []);
+        // Cycle through filters (All -> Registered -> Guests -> All)
+        const toggleFilter = () => {
+        let nextFilter;
+        if (filter === 'all') nextFilter = 'registered';
+        else if (filter === 'registered') nextFilter = 'guest';
+        else nextFilter = 'all';
+        setFilter(nextFilter);
+        applyFilters(allPotentialUsers, searchQuery, nextFilter);
+        };
 
-  return (
-    <View style={styles.container}>
+        const toggleSelection = (user) => {
+        const isSelected = localSelection.some(u => u.uniqueKey === user.uniqueKey);
+        if (isSelected) {
+            setLocalSelection(localSelection.filter(u => u.uniqueKey !== user.uniqueKey));
+        } else {
+            setLocalSelection([...localSelection, user]);
+        }
+        };
 
-      <View style={styles.contentHeader}>
-        <ThemedText style={styles.headerTitle}>Active Bills</ThemedText>
+        const handleConfirm = () => {
+        onConfirm(localSelection); // Pass local choices up to parent
+        onClose();
+        };
 
-        <Pressable style={styles.addButton} onPress={() => setShowAddModal(true)}>
-          <Ionicons name="add" size={20} color="#fff" />
-          <ThemedText style={styles.addButtonText}>New Bill</ThemedText>
-        </Pressable>
-      </View>
+        const FilterBadge = () => {
+        let label = 'All';
+        let icon = 'people';
+        if (filter === 'registered') { label = 'Reg'; icon = 'at-circle'; }
+        if (filter === 'guest') { label = 'Guest'; icon = 'happy'; }
+        return (
+            <Pressable style={styles.wireframeFilterBtn} onPress={toggleFilter}>
+            <Ionicons name={icon} size={16} color="#333" />
+            <ThemedText style={styles.filterBtnText}>{label}</ThemedText>
+            </Pressable>
+        );
+        };
 
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        return (
+        <Modal visible={visible} transparent animationType="slide">
+            <View style={styles.modalOverlay}>
+            <View style={styles.wireframeSelectPeopleBox}>
+                {/* Top Row: Controls (Based on Wireframe) */}
+                <View style={styles.wireframeControlsRow}>
+                <View style={styles.wireframeSearchWrapper}>
+                    <Ionicons name="search" size={18} color="#AEAEB2" />
+                    <TextInput
+                    style={styles.wireframeSearchInput}
+                    placeholder="Search registered or guest users..."
+                    placeholderTextColor="#C7C7CC"
+                    value={searchQuery}
+                    onChangeText={handleSearch}
+                    />
+                </View>
+                
+                <FilterBadge />
 
-        {bills.map((bill) => (
-          <View key={bill.id} style={styles.billCard}>
-
-            <View style={styles.billMainInfo}>
-              <ThemedText style={styles.billName}>{bill.name}</ThemedText>
-
-              <ThemedText style={styles.billDate}>
-                {new Date(bill.created_at).toLocaleDateString()}
-              </ThemedText>
-            </View>
-
-            <View style={styles.actionRow}>
-
-              <Pressable style={styles.actionIcon}>
-                <Ionicons name="eye-outline" size={18} color="#666" />
-              </Pressable>
-
-              <Pressable style={styles.actionIcon}>
-                <Ionicons name="create-outline" size={18} color="#666" />
-              </Pressable>
-
-              <Pressable style={styles.actionIcon}>
-                <Ionicons name="trash-outline" size={18} color="#ff4444" />
-              </Pressable>
-
-              <Pressable style={styles.actionIcon}>
-                <Ionicons name="archive-outline" size={18} color="tomato" />
-              </Pressable>
-
-            </View>
-
-          </View>
-        ))}
-
-        {bills.length === 0 && (
-          <View style={styles.emptyState}>
-            <ThemedText style={styles.emptyText}>No details</ThemedText>
-          </View>
-        )}
-
-      </ScrollView>
-
-      <Modal visible={showAddModal} transparent animationType="fade">
-
-        <View style={styles.modalOverlay}>
-
-          <ScrollView
-            contentContainerStyle={styles.modalScrollContainer}
-            showsVerticalScrollIndicator={false}
-          >
-
-            <View style={styles.registerBox}>
-
-              <ThemedText style={styles.modalTitle}>Create New Bill</ThemedText>
-
-              <ThemedText style={styles.label}>Bill Name</ThemedText>
-
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Apartment Rent"
-                value={billName}
-                onChangeText={setBillName}
-              />
-
-              <ThemedText style={styles.label}>Generated Invite Code</ThemedText>
-
-              <View style={styles.codeRow}>
-
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  editable={false}
-                  value={inviteCode}
-                />
-
-                <Pressable
-                  style={styles.regenBtn}
-                  onPress={() => setInviteCode(generateInviteCode())}
-                >
-                  <Ionicons name="refresh" size={18} color="#fff" />
+                <Pressable style={styles.wireframeIconBtn} onPress={loadUsersFromSupabase}>
+                    <Ionicons name="refresh" size={18} color="#333" />
                 </Pressable>
+                
+                <Pressable style={styles.wireframeAddGuestBtn} onPress={onAddGuestPress}>
+                    <ThemedText style={styles.addGuestBtnText}>Add guest</ThemedText>
+                </Pressable>
+                </View>
 
-              </View>
-
-
-              <View style={styles.guestBox}>
-
-                <ThemedText style={styles.label}>Guest Information</ThemedText>
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="First Name"
-                  value={guestFirstName}
-                  onChangeText={setGuestFirstName}
-                />
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="Last Name"
-                  value={guestLastName}
-                  onChangeText={setGuestLastName}
-                />
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  value={guestEmail}
-                  onChangeText={setGuestEmail}
-                />
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="Contact Number"
-                  value={guestContact}
-                  onChangeText={setGuestContact}
-                />
-
-              </View>
-
-              <Pressable style={styles.addGuestBtn} onPress={addGuest}>
-                <Ionicons name="person-add-outline" size={18} color="#fff" />
-                <ThemedText style={styles.addGuestText}>Add Guest User</ThemedText>
-              </Pressable>
-
-              <ThemedText style={styles.label}>Involved Persons</ThemedText>
-
-              <View style={styles.userPreview}>
-
-                {guests.length === 0 ? (
-                  <ThemedText style={{ color: "#666" }}>
-                    (Selected users will appear here)
-                  </ThemedText>
-                ) : (
-                  guests.map((guest, index) => (
-                    <View key={index} style={{ flexDirection: "row", marginBottom: 5 }}>
-                      <Ionicons name="person-circle-outline" size={20} color="gray" />
-                      <ThemedText style={{ marginLeft: 8 }}>
-                        {guest.firstName} {guest.lastName}
-                      </ThemedText>
+                {/* Center: Scrollable List Area */}
+                <View style={styles.wireframeListArea}>
+                {loading ? (
+                    <View style={styles.listCenterContent}><ActivityIndicator color="tomato" /></View>
+                ) : displayUsers.length === 0 ? (
+                    <View style={styles.listCenterContent}>
+                    <Ionicons name="search-outline" size={48} color="#CCC" />
+                    <ThemedText style={styles.placeholderText}>No users found</ThemedText>
                     </View>
-                  ))
+                ) : (
+                    <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true} contentContainerStyle={{paddingBottom: 10}}>
+                    {displayUsers.map((userItem) => {
+                        const isSelected = localSelection.some(u => u.uniqueKey === userItem.uniqueKey);
+                        return (
+                        <Pressable 
+                            key={userItem.uniqueKey} 
+                            style={[styles.wireframeUserRow, isSelected && styles.userRowSelected]} 
+                            onPress={() => toggleSelection(userItem)}
+                        >
+                            <Ionicons 
+                            name={userItem.type === 'registered' ? "at-circle" : "person-circle"} 
+                            size={28} 
+                            color={isSelected ? "tomato" : "#AEAEB2"} 
+                            />
+                            <View style={styles.userInfo}>
+                            <ThemedText style={[styles.userNameText, isSelected && styles.textSelected]}>
+                                {userItem.name}
+                            </ThemedText>
+                            {userItem.type === 'guest' && <ThemedText style={styles.userSubtext}>{userItem.email}</ThemedText>}
+                            </View>
+                            <Ionicons 
+                            name={isSelected ? "checkbox" : "square-outline"} 
+                            size={24} 
+                            color={isSelected ? "tomato" : "#C7C7CC"} 
+                            />
+                        </Pressable>
+                        );
+                    })}
+                    </ScrollView>
                 )}
+                </View>
 
-              </View>
-
-              <View style={styles.modalButtons}>
-
-                <Pressable
-                  style={styles.cancelBtn}
-                  onPress={() => setShowAddModal(false)}
-                >
-                  <ThemedText style={styles.cancelBtnText}>Cancel</ThemedText>
+                {/* Bottom: Action Buttons */}
+                <View style={styles.wireframeFooterRow}>
+                <Pressable style={styles.wireframeCancelBtn} onPress={onClose}>
+                    <ThemedText style={styles.cancelBtnText}>Cancel</ThemedText>
                 </Pressable>
-
-                <Pressable
-                  style={styles.confirmBtn}
-                  onPress={createBill}
-                >
-                  <ThemedText style={styles.confirmBtnText}>
-                    Create Bill
-                  </ThemedText>
+                <Pressable style={styles.wireframeConfirmBtn} onPress={handleConfirm}>
+                    <ThemedText style={styles.confirmBtnText}>
+                    Add People ({localSelection.length})
+                    </ThemedText>
                 </Pressable>
-
-              </View>
-
+                </View>
             </View>
+            </View>
+        </Modal>
+        );
+    };
 
-          </ScrollView>
-
+    // --- RENDER MAIN UI ---
+    return (
+        <View style={styles.container}>
+        {/* Dashboard Header */}
+        <View style={styles.contentHeader}>
+            <View>
+            <ThemedText style={styles.headerTitle}>Active Bills</ThemedText>
+            <ThemedText style={styles.headerSubtitle}>Manage your shared expenses</ThemedText>
+            </View>
+            <Pressable style={styles.addButton} onPress={() => setShowAddModal(true)}>
+            <Ionicons name="add" size={22} color="#fff" />
+            <ThemedText style={styles.addButtonText}>New Bill</ThemedText>
+            </Pressable>
         </View>
 
-      </Modal>
+        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+            {bills.map((bill) => (
+            <View key={bill.id} style={styles.billCard}>
+                <View style={styles.billHeader}>
+                <View style={styles.iconBg}><Ionicons name="receipt" size={20} color="tomato" /></View>
+                <View style={styles.billMainInfo}>
+                    <ThemedText style={styles.billName}>{bill.name}</ThemedText>
+                    <ThemedText style={styles.billDate}>Created {new Date(bill.created_at).toLocaleDateString()}</ThemedText>
+                </View>
+                <View style={styles.statusBadge}><ThemedText style={styles.statusText}>Active</ThemedText></View>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.actionRow}>
+                <Pressable style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}><Ionicons name="create" size={18} color="#666" /></Pressable>
+                                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" /></Pressable>
+                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="trash" size={18} color="#FF3B30" /></Pressable>
+                </View>
+            </View>
+            ))}
+        </ScrollView>
 
-    </View>
-  );
-}
+        {/* --- CREATE BILL MODAL (Simplified to show selected people list) --- */}
+        <Modal visible={showAddModal} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+            <View style={styles.modernWireframeBox}>
+                <View style={styles.modalHeaderRow}>
+                <ThemedText style={styles.modalTitleText}>Create new bill</ThemedText>
+                <Pressable style={styles.closeBtn} onPress={() => { setShowAddModal(false); resetForm(); }}>
+                    <ThemedText style={styles.closeBtnText}>Close</ThemedText>
+                </Pressable>
+                </View>
 
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
+                <ThemedText style={styles.fieldLabel}>Generated Code</ThemedText>
+                <View style={styles.codeRow}>
+                    <View style={styles.codeDisplayBox}>
+                    <ThemedText style={styles.codeDisplayText}>{inviteCode}</ThemedText>
+                    </View>
+                    <Pressable style={styles.regenBtn} onPress={() => setInviteCode(generateInviteCode())}>
+                    <Ionicons name="refresh" size={20} color="#fff" />
+                    </Pressable>
+                </View>
 
+                <ThemedText style={styles.fieldLabel}>Bill name</ThemedText>
+                <TextInput
+                    style={styles.modernInput}
+                    placeholder="e.g. Monthly Electricity"
+                    placeholderTextColor="#A1A1A1"
+                    value={billName}
+                    onChangeText={setBillName}
+                />
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f4f4f4', paddingTop: 50 },
-  contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 25, marginBottom: 20 },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#333' },
-  addButton: { flexDirection: 'row', backgroundColor: 'tomato', paddingVertical: 8, paddingHorizontal: 15, borderRadius: 8, alignItems: 'center' },
-  addButtonText: { color: '#fff', fontWeight: 'bold', marginLeft: 5 },
-  scrollContainer: { paddingHorizontal: 20, paddingBottom: 50 },
-  billCard: { backgroundColor: '#fff', borderRadius: 15, padding: 20, marginBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  billMainInfo: { flex: 1 },
-  billName: { fontSize: 17, fontWeight: 'bold', color: '#333' },
-  billDate: { fontSize: 13, color: '#999', marginTop: 2 },
-  actionRow: { flexDirection: 'row' },
-  actionIcon: { padding: 8, marginLeft: 5, backgroundColor: '#f9f9f9', borderRadius: 8 },
-  emptyState: { alignItems: 'center', marginTop: 100 },
-  emptyText: { fontSize: 18, color: '#ccc', fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
-  registerBox: { width: 500, maxWidth: 700, backgroundColor: '#fff', borderRadius: 20, padding: 25, elevation: 10 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: '#333' },
-  label: { fontSize: 14, fontWeight: '600', color: '#666', marginBottom: 8 },
-  input: { width: '100%', height: 48, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 15, backgroundColor: '#fafafa', marginBottom: 20 },
-  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end' },
-  cancelBtn: { padding: 12, marginRight: 10 },
-  cancelBtnText: { color: '#999', fontWeight: '600' },
-  confirmBtn: { backgroundColor: 'tomato', paddingVertical: 12, paddingHorizontal: 25, borderRadius: 10 },
-  confirmBtnText: { color: '#fff', fontWeight: 'bold' },
-  codeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  regenBtn: { backgroundColor: 'tomato', padding: 12, borderRadius: 10, marginLeft: 10 },
-  addGuestBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#333', paddingVertical: 10, borderRadius: 10, marginBottom: 20 },
-  addGuestText: { color: '#fff', marginLeft: 6, fontWeight: '600' },
-  guestBox: { backgroundColor: '#fafafa', padding: 15, borderRadius: 12, marginBottom: 20 },
-  userPreview: { backgroundColor: '#fff', borderRadius: 10, padding: 15, marginBottom: 20, borderWidth: 1, borderColor: '#eee' },
-  modalScrollContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
-});
+                <View style={styles.involvedHeaderRow}>
+                    <ThemedText style={styles.fieldLabel}>Involved People</ThemedText>
+                    <View style={styles.involvedBtnGroup}>
+                    {/* MODIFIED: clicking now opens the selection modal */}
+                    <Pressable style={styles.smallActionBtn} onPress={() => setShowSelectPeopleModal(true)}>
+                        <Ionicons name="people-outline" size={14} color="#fff" style={{marginRight: 4}} />
+                        <ThemedText style={styles.smallActionBtnText}>Select People</ThemedText>
+                    </Pressable>
+                    </View>
+                </View>
+
+                <View style={styles.peopleListBox}>
+                    <ScrollView nestedScrollEnabled={true}>
+                    {selectedInvolvedPeople.length === 0 ? (
+                        <View style={styles.emptyListContent}>
+                            <Ionicons name="people-outline" size={32} color="#CCC" />
+                            <ThemedText style={styles.listPlaceholder}>List of involved people</ThemedText>
+                        </View>
+                    ) : (
+                        selectedInvolvedPeople.map((p, i) => (
+                        <View key={i} style={styles.personRow}>
+                            <Ionicons 
+                            name={p.type === 'registered' ? "at-circle" : "person-circle"} 
+                            size={24} 
+                            color="tomato" 
+                            />
+                            <ThemedText style={styles.personRowText}>{p.name}</ThemedText>
+                        </View>
+                        ))
+                    )}
+                    </ScrollView>
+                </View>
+                </ScrollView>
+
+                <Pressable style={styles.submitBtn} onPress={createBill}>
+                <ThemedText style={styles.submitBtnText}>Create Bill</ThemedText>
+                </Pressable>
+            </View>
+            </View>
+        </Modal>
+
+        {/* ADD GUEST MODAL (BASED ON WIREFRAME) */}
+            <Modal visible={showAddGuestModal} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modernWireframeBox}>
+                        <View style={styles.modalHeaderRow}>
+                            <ThemedText style={styles.modalTitleText}>Add Guest</ThemedText>
+                            <Pressable style={styles.closeBtn} onPress={() => setShowAddGuestModal(false)}>
+                                <ThemedText style={styles.closeBtnText}>Close</ThemedText>
+                            </Pressable>
+                        </View>
+                        <ThemedText style={styles.fieldLabel}>First name</ThemedText>
+                        <TextInput style={styles.modernInput} value={guestFirst} onChangeText={setGuestFirst} />
+                        <ThemedText style={styles.fieldLabel}>Last name</ThemedText>
+                        <TextInput style={styles.modernInput} value={guestLast} onChangeText={setGuestLast} />
+                        <ThemedText style={styles.fieldLabel}>Email address</ThemedText>
+                        <TextInput style={styles.modernInput} value={guestEmail} onChangeText={setGuestEmail} keyboardType="email-address" />
+                        <Pressable style={styles.submitBtn} onPress={handleAddGuestSubmit}><ThemedText style={styles.submitBtnText}>Submit button</ThemedText></Pressable>
+                    </View>
+                </View>
+            </Modal>
+
+        {/* --- NEW WIREFRAME SELECT PEOPLE MODAL --- */}
+        <SelectPeopleModal 
+            visible={showSelectPeopleModal} 
+            onClose={() => setShowSelectPeopleModal(false)}
+            onConfirm={(people) => setSelectedInvolvedPeople(people)}
+            currentSelection={selectedInvolvedPeople}
+            onAddGuestPress={openGuestModal}
+        />
+        </View>
+    );
+    }
+
+    const styles = StyleSheet.create({
+    // ... existing styles ...
+    container: { flex: 1, backgroundColor: '#F8F9FA', paddingTop: 60 },
+    contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 25, marginBottom: 25 },
+    headerTitle: { fontSize: 28, fontWeight: '800', color: '#1C1C1E' },
+    headerSubtitle: { fontSize: 14, color: '#8E8E93', marginTop: 2 },
+    addButton: { flexDirection: 'row', backgroundColor: 'tomato', paddingVertical: 10, paddingHorizontal: 18, borderRadius: 12, alignItems: 'center', elevation: 4 },
+    addButtonText: { color: '#fff', fontWeight: '700', marginLeft: 6 },
+    scrollContainer: { paddingHorizontal: 20, paddingBottom: 100 },
+    
+    billCard: { backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 16, elevation: 3 },
+    billHeader: { flexDirection: 'row', alignItems: 'center' },
+    iconBg: { width: 44, height: 44, backgroundColor: '#FFF5F3', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    billMainInfo: { flex: 1 },
+    billName: { fontSize: 17, fontWeight: '700', color: '#1C1C1E' },
+    billDate: { fontSize: 12, color: '#AEAEB2', marginTop: 2 },
+    statusBadge: { backgroundColor: '#E7FAEF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    statusText: { color: '#28CD41', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+    divider: { height: 1, backgroundColor: '#F2F2F7', marginVertical: 12 },
+    actionRow: { flexDirection: 'row', justifyContent: 'flex-start' },
+    actionIcon: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+    modernWireframeBox: { 
+        width: Platform.OS === 'web' ? 420 : '90%', 
+        backgroundColor: '#fff', 
+        borderRadius: 30, 
+        padding: 24, 
+        elevation: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+    },
+    modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+    modalTitleText: { fontSize: 22, fontWeight: '800', color: '#1C1C1E' },
+    closeBtn: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#F2F2F7' },
+    closeBtnText: { fontSize: 14, fontWeight: '700', color: '#8E8E93' },
+    
+    fieldLabel: { fontSize: 13, fontWeight: '700', color: '#AEAEB2', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
+    codeRow: { flexDirection: 'row', marginBottom: 20 },
+    codeDisplayBox: { flex: 1, height: 50, backgroundColor: '#F8F9FA', borderRadius: 15, justifyContent: 'center', paddingHorizontal: 15, borderWidth: 1, borderColor: '#F2F2F7' },
+    codeDisplayText: { fontSize: 20, letterSpacing: 4, fontWeight: '800', color: 'tomato' },
+    regenBtn: { width: 50, height: 50, backgroundColor: '#1C1C1E', borderRadius: 15, marginLeft: 10, justifyContent: 'center', alignItems: 'center' },
+    
+    modernInput: { height: 50, backgroundColor: '#F8F9FA', borderRadius: 15, paddingHorizontal: 15, fontSize: 16, marginBottom: 20, borderWidth: 1, borderColor: '#F2F2F7', color: '#1C1C1E' },
+    
+    involvedHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+    involvedBtnGroup: { flexDirection: 'row' },
+    smallActionBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, backgroundColor: 'tomato' },
+    smallActionBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+    
+    peopleListBox: { height: 160, backgroundColor: '#F8F9FA', borderRadius: 20, padding: 15, marginBottom: 25, borderWidth: 1, borderColor: '#F2F2F7' },
+    emptyListContent: { alignItems: 'center', marginTop: 30 },
+    listPlaceholder: { color: '#AEAEB2', marginTop: 8, fontSize: 14, fontWeight: '500' },
+    personRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, backgroundColor: '#fff', padding: 10, borderRadius: 12, elevation: 1 },
+    personRowText: { marginLeft: 10, fontSize: 15, fontWeight: '600', color: '#333' },
+
+    submitBtn: { backgroundColor: 'tomato', height: 55, borderRadius: 18, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: 'tomato', shadowOpacity: 0.3, shadowRadius: 10 },
+    submitBtnText: { fontSize: 18, fontWeight: '800', color: '#fff' },
+
+    // --- NEW STYLES FOR THE SELECT PEOPLE MODAL (WIREFRAME MATCH) ---
+    wireframeSelectPeopleBox: {
+        width: '95%',
+        maxWidth: 600,
+        backgroundColor: '#fff',
+        borderRadius: 24,
+        padding: 16, // tighter padding like wireframe
+        shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 15,
+    },
+    wireframeControlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+        borderBottomWidth: 1, borderBottomColor: '#F2F2F7', paddingBottom: 12
+    },
+    wireframeSearchWrapper: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 40,
+        backgroundColor: '#F2F2F7',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        marginRight: 10
+    },
+    wireframeSearchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: '#1C1C1E',
+        marginLeft: 8
+    },
+    wireframeFilterBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        height: 40,
+        borderWidth: 1, borderColor: '#E5E5EA',
+        borderRadius: 10,
+        marginRight: 8
+    },
+    filterBtnText: { fontSize: 13, color: '#333', fontWeight: '600', marginLeft: 4 },
+    wireframeIconBtn: {
+        width: 40, height: 40, justifyContent: 'center', alignItems: 'center',
+        borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 10, marginRight: 8
+    },
+    wireframeAddGuestBtn: {
+        paddingHorizontal: 12, height: 40, justifyContent: 'center', alignItems: 'center',
+        backgroundColor: '#333', borderRadius: 10
+    },
+    addGuestBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+    
+    wireframeListArea: {
+        height: 350,
+        borderWidth: 1, borderColor: '#E5E5EA',
+        borderRadius: 12,
+        marginBottom: 16,
+        overflow: 'hidden'
+    },
+    listCenterContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    placeholderText: { fontSize: 14, color: '#AEAEB2', marginTop: 10 },
+    
+    wireframeUserRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1, borderBottomColor: '#F2F2F7'
+    },
+    userRowSelected: { backgroundColor: '#FFF5F3' },
+    userInfo: { flex: 1, paddingHorizontal: 12 },
+    userNameText: { fontSize: 16, fontWeight: '600', color: '#1C1C1E' },
+    textSelected: { color: 'tomato' },
+    userSubtext: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
+    
+    wireframeFooterRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 12
+    },
+    wireframeCancelBtn: {
+        flex: 1, height: 48, justifyContent: 'center', alignItems: 'center',
+        borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 12
+    },
+    cancelBtnText: { fontSize: 16, color: '#8E8E93', fontWeight: '600' },
+    wireframeConfirmBtn: {
+        flex: 2, height: 48, justifyContent: 'center', alignItems: 'center',
+        backgroundColor: 'tomato', borderRadius: 12
+    },
+    confirmBtnText: { fontSize: 16, color: '#fff', fontWeight: '700' },
+    });

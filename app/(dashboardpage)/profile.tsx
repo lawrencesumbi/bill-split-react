@@ -1,7 +1,8 @@
 import { SignOutButton } from '@/components/sign-out-button';
 import { ThemedText } from '@/components/themed-text';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, TextInput } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 export default function Profile() {
   const [lastName, setLastName] = useState('');
@@ -12,124 +13,183 @@ export default function Profile() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  const InputField = ({ label, value, onChangeText, icon, ...props }: any) => (
+    <View style={styles.inputWrapper}>
+      <ThemedText style={styles.label}>{label}</ThemedText>
+      <View style={styles.inputContainer}>
+        <Ionicons name={icon} size={18} color="#AEAEB2" style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholderTextColor="#C7C7CC"
+          {...props}
+        />
+      </View>
+    </View>
+  );
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <ThemedText style={styles.header}>Profile</ThemedText>
+    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Header Section */}
+      <View style={styles.headerSection}>
+        <View style={styles.avatarPlaceholder}>
+          <ThemedText style={styles.avatarText}>{firstName[0] || 'U'}</ThemedText>
+          <Pressable style={styles.editBadge}>
+            <Ionicons name="camera" size={14} color="#fff" />
+          </Pressable>
+        </View>
+        <View>
+          <ThemedText style={styles.headerTitle}>Account Settings</ThemedText>
+          <ThemedText style={styles.headerSubtitle}>Update your personal information and security</ThemedText>
+        </View>
+      </View>
 
-      {/* Last Name */}
-      <ThemedText style={styles.label}>Last Name </ThemedText>
-      <TextInput
-        style={styles.input}
+      {/* Personal Information Card */}
+      <View style={styles.card}>
+        <ThemedText style={styles.cardTitle}>Personal Information</ThemedText>
+        <View style={styles.row}>
+          <View style={{ flex: 1, marginRight: 10 }}>
+            <InputField label="First Name" value={firstName} onChangeText={setFirstName} icon="person-outline" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <InputField label="Last Name" value={lastName} onChangeText={setLastName} icon="person-outline" />
+          </View>
+        </View>
+        <InputField label="Nickname" value={nickname} onChangeText={setNickname} icon="happy-outline" />
+      </View>
 
-        value={lastName}
-        onChangeText={setLastName}
-      />
+      {/* Account Details Card */}
+      <View style={styles.card}>
+        <ThemedText style={styles.cardTitle}>Account Details</ThemedText>
+        <InputField label="Email Address" value={email} onChangeText={setEmail} icon="mail-outline" keyboardType="email-address" />
+        <InputField label="Username" value={username} onChangeText={setUsername} icon="at-outline" />
+      </View>
 
-      {/* First Name */}
-      <ThemedText style={styles.label}>First Name </ThemedText>
-      <TextInput
-        style={styles.input}
-        value={firstName}
-        onChangeText={setFirstName}
-      />
+      {/* Security Card */}
+      <View style={styles.card}>
+        <ThemedText style={styles.cardTitle}>Security</ThemedText>
+        <InputField label="New Password" value={password} onChangeText={setPassword} icon="lock-closed-outline" secureTextEntry />
+        <InputField label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} icon="checkmark-circle-outline" secureTextEntry />
+      </View>
 
-      {/* Nickname */}
-      <ThemedText style={styles.label}>Nickname </ThemedText>
-      <TextInput
-        style={styles.input}
-        value={nickname}
-        onChangeText={setNickname}
-      />
-
-
-      {/* Email */}
-      <ThemedText style={styles.label}>Email </ThemedText>
-      <TextInput
-        style={styles.input}
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-
-      {/* Username */}
-      <ThemedText style={styles.label}>Username</ThemedText>
-      <TextInput
-        style={styles.input}
-        value={username}
-        onChangeText={setUsername}
-      />
-      
-
-      {/* Password */}
-      <ThemedText style={styles.label}>Password </ThemedText>
-      <TextInput
-        style={styles.input}
-
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-
-      {/* Confirm Password */}
-      <ThemedText style={styles.label}>Confirm Password *</ThemedText>
-      <TextInput
-        style={styles.input}
-        placeholder="Confirm Password"
-        secureTextEntry
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-      />
-
-      {/* Logout Button */}
-      <SignOutButton />
-
+      <View style={styles.footer}>
+        <Pressable style={styles.saveButton}>
+            <ThemedText style={styles.saveButtonText}>Save Changes</ThemedText>
+        </Pressable>
+        <SignOutButton />
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 25,
-    backgroundColor: '#f4f4f4',
-    paddingBottom: 50,
+    padding: 40,
+    backgroundColor: '#F8F9FA',
   },
-  header: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  input: {
-    width: '100%',
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginBottom: 10,
-    backgroundColor: '#fff',
-  },
-  note: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 15,
-  },
-  logoutBtn: {
+  headerSection: {
     flexDirection: 'row',
-    backgroundColor: 'tomato',
-    padding: 15,
-    borderRadius: 50,
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  avatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#E5E5EA',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 30,
+    marginRight: 20,
+    position: 'relative',
   },
-  logoutText: {
-    color: '#fff',
+  avatarText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#8E8E93',
+  },
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: 'tomato',
+    padding: 6,
+    borderRadius: 15,
+    borderWidth: 3,
+    borderColor: '#F8F9FA',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1C1C1E',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginTop: 4,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 2,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginBottom: 20,
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  inputWrapper: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 13,
     fontWeight: '600',
-    marginLeft: 8,
+    color: '#3A3A3C',
+    marginBottom: 8,
+    marginLeft: 4,
   },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 50,
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1C1C1E',
+  },
+  footer: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  saveButton: {
+    backgroundColor: '#1C1C1E',
+    paddingVertical: 16,
+    paddingHorizontal: 30,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  }
 });
