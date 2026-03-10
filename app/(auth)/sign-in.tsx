@@ -8,7 +8,7 @@ import { ActivityIndicator, ImageBackground, KeyboardAvoidingView, Platform, Pre
 export default function Login() {
   const router = useRouter()
   const { signIn, setActive, isLoaded } = useSignIn()
-  const [username, setUsername] = React.useState('') // Identifier
+  const [email, setEmail] = React.useState('') // Identifier
   const [password, setPassword] = React.useState('')
   const [isPasswordVisible, setIsPasswordVisible] = React.useState(false)
   const [code, setCode] = React.useState('')
@@ -23,7 +23,7 @@ export default function Login() {
     if (!isLoaded) return
     setLoginloading(true)
     try {
-      const signInAttempt = await signIn.create({ identifier: username, password })
+      const signInAttempt = await signIn.create({ identifier: email, password })
       setLoginloading(false)
       if (signInAttempt.status === 'complete') {
         await setActive({
@@ -43,7 +43,7 @@ export default function Login() {
       setLoginloading(false)
       setClerkErrors(JSON.parse(JSON.stringify(err, null, 2)))
     }
-  }, [isLoaded, signIn, setActive, router, username, password])
+  }, [isLoaded, signIn, setActive, router, email, password])
 
   const onVerifyPress = React.useCallback(async () => {
     if (!isLoaded) return
@@ -92,14 +92,14 @@ export default function Login() {
               <>
                 <View style={styles.inputWrapper}>
                   {/* ICON CHANGED TO PERSON-OUTLINE */}
-                  <Ionicons name="person-outline" size={20} color="#999" style={styles.inlineIcon} />
+                  <Ionicons name="mail-outline" size={20} color="#999" style={styles.inlineIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Username" // UPDATED PLACEHOLDER
+                    placeholder="Email Address" // UPDATED PLACEHOLDER
                     placeholderTextColor="#999"
                     autoCapitalize="none"
-                    value={username}
-                    onChangeText={setUsername}
+                    value={email}
+                    onChangeText={setEmail}
                   />
                 </View>
 
@@ -127,9 +127,9 @@ export default function Login() {
                 </Pressable>
 
                 <Pressable
-                  style={[styles.button, (!username || !password) && styles.buttonDisabled]}
+                  style={[styles.button, (!email || !password) && styles.buttonDisabled]}
                   onPress={onSignInPress}
-                  disabled={!username || !password || loginLoading}
+                  disabled={!email || !password || loginLoading}
                 >
                   {loginLoading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Login</Text>}
                 </Pressable>

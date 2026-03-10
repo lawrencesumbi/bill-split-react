@@ -1,17 +1,13 @@
-import { ThemedText } from '@/components/themed-text'
-import { SignedIn, SignedOut, useAuth, useSession, useUser } from '@clerk/clerk-expo'
-import { Link } from 'expo-router'
-import * as React from 'react'
-import { ImageBackground, Pressable, StyleSheet, View } from 'react-native'
+import { ThemedText } from '@/components/themed-text';
+import { SignedIn, SignedOut, useUser } from '@clerk/clerk-expo';
+import { Link } from 'expo-router';
+import * as React from 'react';
+import { Dimensions, ImageBackground, Pressable, StyleSheet, View } from 'react-native';
 
-// const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY })
+const { width } = Dimensions.get('window');
 
 export default function Page() {
-  const { user } = useUser()
-  const { isSignedIn } = useAuth()
-  const { session } = useSession()
-
-  console.log(session?.currentTask)
+  const { user } = useUser();
 
   return (
     <ImageBackground
@@ -20,101 +16,143 @@ export default function Page() {
       resizeMode="cover"
     >
       <View style={styles.overlay}>
-        <View style={styles.container}>
-
-          <ThemedText type="title" style={styles.title}>
-            Welcome to Bill Splitter
-          </ThemedText>
-
-          <ThemedText style={styles.tagline}>
-            Spend more time eating, less time calculating
-          </ThemedText>
+        <View style={styles.contentContainer}>
+          
+          <View style={styles.textSection}>
+            <ThemedText style={styles.title}>
+              Bill Splitter
+            </ThemedText>
+            <ThemedText style={styles.tagline}>
+              Spend more time eating,{"\n"}less time calculating.
+            </ThemedText>
+          </View>
 
           {/* Signed Out UI */}
           <SignedOut>
-            <View style={styles.view}>
-            <Pressable style={styles.button}>
-              <Link href="/(auth)/sign-in" style={styles.buttonText}>
-                <ThemedText style={styles.buttonText}>Sign In</ThemedText>
+            <View style={styles.buttonGroup}>
+              <Link href="/(auth)/sign-in" asChild>
+                <Pressable style={styles.secondaryButton}>
+                  <ThemedText style={styles.secondaryButtonText}>Sign In</ThemedText>
+                </Pressable>
               </Link>
-            </Pressable>
 
-            <Pressable style={styles.button}>
-              <Link href="/(auth)/sign-up" style={styles.buttonText}>
-                <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
+              <Link href="/(auth)/sign-up" asChild>
+                <Pressable style={styles.primaryButton}>
+                  <ThemedText style={styles.primaryButtonText}>Sign Up</ThemedText>
+                </Pressable>
               </Link>
-            </Pressable>
             </View>
-            {/* <View style={{ marginTop: 20 }}>
-              <SignOutButton />
-            </View> */}
           </SignedOut>
 
           {/* Signed In UI */}
           <SignedIn>
-            <Pressable style={styles.button}>
-              <Link href="/(dashboardpage)/dashboard" style={styles.buttonText}>
-                <ThemedText style={styles.buttonText}>Dashboard</ThemedText>
+            <View style={styles.signedInContainer}>
+              <ThemedText style={styles.welcomeBack}>
+                Welcome back, {user?.firstName || 'User'}!
+              </ThemedText>
+              <Link href="/(dashboardpage)/dashboard" asChild>
+                <Pressable style={styles.primaryButtonLarge}>
+                  <ThemedText style={styles.primaryButtonText}>Go to Dashboard</ThemedText>
+                </Pressable>
               </Link>
-            </Pressable>
+            </View>
           </SignedIn>
 
         </View>
       </View>
     </ImageBackground>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
   background: {
     flex: 1,
-    width: '100%',
     height: '100%',
+    width: '100%',  
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.45)', 
+    justifyContent: 'center', // Changed from flex-end to center
+    alignItems: 'center',
+  },
+  contentContainer: {
+    paddingHorizontal: 25,
+    width: '100%',
+    maxWidth: 500,
+  },
+  textSection: {
+    marginBottom: 40,
+    alignItems: 'center', 
+  },
+  title: {
+    fontSize: 52,
+    color: '#fff',
+    fontWeight: '900',
+    lineHeight: 52,
+    letterSpacing: -1.5,
+    textAlign: 'center',
+  },
+  tagline: {
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 15,
+    fontWeight: '500',
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  buttonGroup: {
+    flexDirection: 'row', 
+    width: '100%',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  signedInContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  primaryButton: {
+    flex: 1, 
+    backgroundColor: 'tomato',
+    height: 60,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+  },
+  primaryButtonLarge: {
+    width: '100%', 
+    backgroundColor: 'tomato',
+    height: 60,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  container: {
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  secondaryButton: {
+    flex: 1, 
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    height: 60,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
-  title: {
-    fontSize: 48,
+  secondaryButtonText: {
     color: '#fff',
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  welcomeBack: {
+    color: '#fff',
+    fontSize: 16,
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 15,
+    fontWeight: '600',
   },
-  tagline: {
-    fontSize: 20,
-    color: '#ddd',
-    textAlign: 'center',
-    marginBottom: 40,
-    maxWidth: 600,
-  },
-  button: {
-    backgroundColor: 'tomato',
-    paddingVertical: 18,
-    paddingHorizontal: 40,
-    borderRadius: 50,
-    marginTop: 15,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  welcomeText: {
-    fontSize: 18,
-    color: '#fff',
-    marginTop: 20,
-  },
-  view: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 10
-  }
-})
+});

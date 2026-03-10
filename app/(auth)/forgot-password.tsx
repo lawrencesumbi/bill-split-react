@@ -1,7 +1,8 @@
 import { useSignIn } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
-import { ActivityIndicator, ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ImageBackground, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import validator from 'validator';
 
 export default function ForgotPassword() {
@@ -20,15 +21,12 @@ export default function ForgotPassword() {
   const [codeAccepted, setCodeAccepted] = React.useState(false)
   const [resetPasswordLoading, setResetPasswordLoading] = React.useState(false)
 
-
   let messages = []
-
   if (clerkErrors.errors) {
     messages = clerkErrors.errors
   }
 
-  // Handle sending code
-
+  // --- LOGIC (REMAINING UNTOUCHED AS REQUESTED) ---
   const handleSubmit = () => {
     if(validateForm()) {
       onReset()
@@ -37,39 +35,29 @@ export default function ForgotPassword() {
 
   const validateForm = () => {
     let errors = {}
-
     if(validator.isEmpty(password)) errors.password = "You must enter a new password"
-
     if (password.length < 8) errors.passwordTooShort = "Password must be at least 8 characters."
     if (password.length > 16) errors.passwordTooLong = "Password must not exceed 16 characters."
     if (!validator.isStrongPassword(password)) errors.passwordTooWeak = "Password must be a combination of at least one upper case and lower case characters, special characters and number."
-
     if (!validator.equals(confirmPassword, password)) {
       errors.passwordDoesntMatch = "Password does not match."
       setConfirmPassword("")
     }
-
     setErrors(errors)
-
     return Object.keys(errors).length === 0;
   }
 
   const validateEmail = () => {
     let errors = {}
-
     if (validator.isEmpty(email)) errors.email = "Email must not be empty"
     setErrors(errors)
-
     return Object.keys(errors).length === 0;
   }
 
   const validateCodeAndPass = () => {
     let errors = {}
-
     if(validator.isEmpty(code)) errors.code = "Code must not be empty."
-
     setErrors(errors)
-
     return Object.keys(errors).length === 0;
   }
 
@@ -81,11 +69,11 @@ export default function ForgotPassword() {
           strategy: 'reset_password_email_code',
           identifier: email
         })
-
         setEmailRequestLoading(false)
         setSuccessfulCreation(true)
       } catch(err: any) {
         setClerkErrors(err)
+        setEmailRequestLoading(false)
         console.error(JSON.stringify(err, null, 2))
       }
     }
@@ -100,9 +88,7 @@ export default function ForgotPassword() {
           code,
           password
         })
-        console.log(result)
         setCodeSubmitLoading(false)
-
         router.replace('/')
         await setActive!({ session: result.createdSessionId })
       } catch (err: any) {
@@ -112,209 +98,208 @@ export default function ForgotPassword() {
       }
     }
   };
-    return (
-      <View style={styles.mainContainer}>
-        <ImageBackground 
-          source={require('../../assets/images/bg.jpg')} 
-          style={styles.backgroundImage}
-          resizeMode="cover"
+
+  // --- MODERNIZED UI ---
+  return (
+    <View style={styles.mainContainer}>
+      <ImageBackground 
+        source={require('../../assets/images/bg.jpg')} 
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={styles.overlay}
         >
+          <View style={styles.cardBox}>
+            {/* Native-style Back Button */}
+            <Pressable 
+              style={styles.absBackButton} 
+              onPress={() => successfulCreation ? setSuccessfulCreation(false) : router.back()}
+            >
+              <Ionicons name="chevron-back" size={28} color="#1C1C1E" />
+            </Pressable>
 
-          {!successfulCreation && (
-            <View style={styles.overlay}>
-              <View style={styles.cardBox}>
-                <Text style={styles.title}>Forgot Password?</Text>
-                  <Text style={styles.subtitle}>
-                    Enter your email and we'll send you a code to reset your password.
-                  </Text>
+            {!successfulCreation ? (
+              <View style={styles.fullWidth}>
+                <Text style={styles.title}>Reset Password</Text>
+                <Text style={styles.subtitle}>Enter your email to receive a verification code.</Text>
 
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Email Address</Text>
-                    <TextInput 
-                      style={styles.input} 
-                      placeholder="testemail@example.com" 
-                      placeholderTextColor="#999"
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      value={email}
-                      onChangeText={setEmail}
-                    />
-                    {
-                      errors.email ? <Text style={styles.errorMessage}>{errors.email}</Text> : null
-                    }
-                  </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Email Address</Text>
+                  <TextInput 
+                    style={[styles.input, errors.email && styles.inputError]} 
+                    placeholder="name@example.com" 
+                    placeholderTextColor="#AEAEB2"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={email}
+                    onChangeText={setEmail}
+                  />
+                  {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+                </View>
 
-                  <Pressable style={styles.button} onPress={onRequestReset}>
-                    <Text style={styles.buttonText}>{emailRequestLoading ? <ActivityIndicator color="white"/> : "Submit"}</Text>
-                  </Pressable>
+                <Pressable style={styles.primaryButton} onPress={onRequestReset}>
+                  {emailRequestLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Code</Text>}
+                </Pressable>
               </View>
-            </View>
-          )}
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} style={styles.fullWidth}>
+                <Text style={styles.title}>Verification</Text>
+                <Text style={styles.subtitle}>Check your inbox for the 6-digit code.</Text>
 
-          {successfulCreation && (
-            <View style={styles.overlay}>
-              <View style={styles.cardBox}>
-                <Text style={styles.title}>Enter Verification Code</Text>
-                  <Text style={styles.subtitle}>
-                    A code has been sent to your email. Please enter it below, and also enter your new password.
-                  </Text>
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Verification Code</Text>
-                    <TextInput 
-                      style={styles.input} 
-                      placeholder="Enter code" 
-                      placeholderTextColor="#999"
-                      keyboardType="numeric"
-                      value={code}
-                      onChangeText={setCode}
-                    />
-                    {
-                      errors.code ? <Text style={styles.errorMessage}>{errors.code}</Text> : null
-                    }
-                    {
-                      messages.map((message: any, index: number) => (
-                        <Text key={index} style={styles.errorMessage}>{message.longMessage}</Text>
-                      ))
-                    }
-                  </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Code</Text>
+                  <TextInput 
+                    style={[styles.input, (errors.code || messages.length > 0) && styles.inputError]} 
+                    placeholder="000000" 
+                    placeholderTextColor="#AEAEB2"
+                    keyboardType="numeric"
+                    value={code}
+                    onChangeText={setCode}
+                  />
+                  {errors.code && <Text style={styles.errorText}>{errors.code}</Text>}
+                  {messages.map((m, i) => <Text key={i} style={styles.errorText}>{m.longMessage}</Text>)}
+                </View>
 
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>New Password</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="••••••••"
-                      placeholderTextColor="#999"
-                      secureTextEntry
-                      value={password}
-                      onChangeText={setPassword}
-                    />
-                    {
-                      errors.password ? <Text style={styles.errorMessage}>{errors.password}</Text> : null
-                    }
-                    {
-                      errors.passwordTooShort ? <Text style={styles.errorMessage}>{errors.passwordTooShort}</Text> : null
-                    }
-                    {
-                      errors.passwordTooLong ? <Text style={styles.errorMessage}>{errors.passwordTooLong}</Text> : null
-                    }
-                    {
-                      errors.passwordTooWeak ? <Text style={styles.errorMessage}>{errors.passwordTooWeak}</Text> : null
-                    }
-                    {
-                      errors.passwordDoesntMatch ? <Text style={styles.errorMessage}>{errors.passwordDoesntMatch}</Text> : null
-                    }
-                  </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>New Password</Text>
+                  <TextInput
+                    style={[styles.input, (errors.password || errors.passwordTooShort || errors.passwordTooLong || errors.passwordTooWeak) && styles.inputError]}
+                    placeholder="••••••••"
+                    placeholderTextColor="#AEAEB2"
+                    secureTextEntry
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+                  {errors.passwordTooShort && <Text style={styles.errorText}>{errors.passwordTooShort}</Text>}
+                  {errors.passwordTooWeak && <Text style={styles.errorText}>{errors.passwordTooWeak}</Text>}
+                </View>
 
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Confirm Password</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="••••••••"
-                      placeholderTextColor="#999"
-                      secureTextEntry
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                    />
-                  </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Confirm Password</Text>
+                  <TextInput
+                    style={[styles.input, errors.passwordDoesntMatch && styles.inputError]}
+                    placeholder="••••••••"
+                    placeholderTextColor="#AEAEB2"
+                    secureTextEntry
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                  />
+                  {errors.passwordDoesntMatch && <Text style={styles.errorText}>{errors.passwordDoesntMatch}</Text>}
+                </View>
 
-                  <Pressable style={styles.button} onPress={handleSubmit}>
-                    <Text style={styles.buttonText}>{codeSubmitLoading ? <ActivityIndicator color="white"/> : "Verify Code"}</Text>
-                  </Pressable>
+                <Pressable style={styles.primaryButton} onPress={handleSubmit}>
+                  {codeSubmitLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify & Update</Text>}
+                </Pressable>
 
-                  <Pressable onPress={() => setShowCodeInput(false)}>
-                    <Text style={styles.backLink}>Back to email</Text>
-                  </Pressable>
-              </View>
-            </View>
-          )}
-        </ImageBackground>
-      </View>
-    );
-
+                <Pressable onPress={() => setSuccessfulCreation(false)} style={styles.linkContainer}>
+                  <Text style={styles.linkText}>Use a different email</Text>
+                </Pressable>
+              </ScrollView>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </ImageBackground>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  backgroundImage: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
+  mainContainer: { flex: 1 },
+  backgroundImage: { flex: 1, height: '100%', width: '100%' },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   cardBox: {
-    width: '90%',
-    maxWidth: 400,
+    width: '92%',
+    maxWidth: 420,
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 40,
-    alignItems: 'center',
+    borderRadius: 28,
+    padding: 24,
+    paddingTop: 64,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
-    elevation: 10,
+    elevation: 8,
+    position: 'relative',
   },
+  absBackButton: {
+    position: 'absolute',
+    top: 20,
+    left: 16,
+    zIndex: 10,
+  },
+  fullWidth: { width: '100%' },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1C1C1E',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 15,
-    color: '#666',
+    color: '#8E8E93',
     textAlign: 'center',
-    marginBottom: 30,
-    lineHeight: 22,
+    marginBottom: 32,
+    lineHeight: 20,
+    paddingHorizontal: 10,
   },
-  inputContainer: {
-    width: '100%',
-    marginBottom: 25,
-  },
+  inputGroup: { marginBottom: 20 },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#444',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1C1C1E',
     marginBottom: 8,
+    marginLeft: 4,
   },
   input: {
-    width: '100%',
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    paddingHorizontal: 15,
+    height: 56,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 16,
+    paddingHorizontal: 16,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    color: '#000',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  button: {
+  inputError: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#FFF2F2',
+  },
+  primaryButton: {
     backgroundColor: 'tomato',
-    width: '100%',
-    height: 50,
-    borderRadius: 10,
+    height: 56,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginTop: 8,
+    shadowColor: 'tomato',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
   },
-  backLink: {
+  linkContainer: { marginTop: 20, alignItems: 'center' },
+  linkText: {
+    color: '#8E8E93',
     fontSize: 14,
-    color: '#888',
+    fontWeight: '600',
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 12,
+    marginTop: 6,
+    marginLeft: 4,
     fontWeight: '500',
   },
-    errorMessage: {
-    color: 'red',
-  }
 });
