@@ -156,13 +156,13 @@ export default function ViewBill() {
     const totalCost = parseFloat(expCost);
     if (!expName || isNaN(totalCost)) return;
 
-    // Map involved guests with custom amounts or equal split
     const finalInvolved = selectedInvolved.map(id => ({
       guestId: id,
       amount: customAmounts[id] || (totalCost / selectedInvolved.length).toString()
     }));
 
     try {
+      // Insert expense
       const { data, error } = await supabase
         .from('expenses')
         .insert([{
@@ -172,31 +172,45 @@ export default function ViewBill() {
           paid_by: expPaidBy,
         }])
         .select()
-        .single(); // return inserted row
+        .single();
 
       if (error) throw error;
 
-      // Add the new expense to local state with involved
-      const newExp: Expense = {
-        id: data.id,
-        name: data.name,
-        cost: data.cost.toString(),
-        paidBy: data.paid_by,
-        involved: finalInvolved,
-      };
+      // Insert involved people
+      if (data) {
+        const involvedRows = finalInvolved.map(i => ({
+          expenses_id: data.id,
+          bill_member_id: i.guestId,
+          amount_spent: parseFloat(i.amount)
+        }));
 
-      setExpenses(prev => [newExp, ...prev]);
+        const { error: involvedError } = await supabase
+          .from('expenses_involved')
+          .insert(involvedRows);
 
-      // Reset form
-      setExpName(''); setExpCost(''); setSelectedInvolved([]); setCustomAmounts({});
-      setShowExpenseModal(false);
+        if (involvedError) throw involvedError;
+
+        // Update local state
+        const newExp: Expense = {
+          id: data.id,
+          name: data.name,
+          cost: data.cost.toString(),
+          paidBy: data.paid_by,
+          involved: finalInvolved,
+        };
+        setExpenses(prev => [newExp, ...prev]);
+
+        // Reset form
+        setExpName(''); setExpCost(''); setSelectedInvolved([]); setCustomAmounts({});
+        setShowExpenseModal(false);
+      }
 
     } catch (err) {
       console.error("Error adding expense:", err);
       Alert.alert("Failed to add expense", "Please try again.");
     }
   };
-
+  
   const toggleInvolved = (id: string) => {
     setSelectedInvolved(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
