@@ -1,7 +1,9 @@
 import { SignOutButton } from '@/components/sign-out-button';
 import { ThemedText } from '@/components/themed-text';
+import { supabase } from "@/utils/supabase";
+import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 export default function Profile() {
@@ -12,6 +14,7 @@ export default function Profile() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const { user } = useUser();
 
   const InputField = ({ label, value, onChangeText, icon, ...props }: any) => (
     <View style={styles.inputWrapper}>
@@ -28,6 +31,30 @@ export default function Profile() {
       </View>
     </View>
   );
+
+  const loadUserProfile = async () => {
+    if (!user) return;
+
+    // 1️⃣ Fetch Supabase nickname
+    const { data: supaData, error: supaError } = await supabase
+      .from("clerk_users")
+      .select("*")
+      .eq("clerk_user_id", user.id)
+      .single();
+
+    if (supaError) console.log("Supabase error:", supaError);
+
+    // 2️⃣ Set state using both Clerk + Supabase
+    setFirstName(user.firstName || "");
+    setLastName(user.lastName || "");
+    setUsername(user.username || "");
+    setEmail(user.emailAddresses?.[0]?.emailAddress || "");
+    setNickname(supaData?.nickname || "");
+  };
+  
+  useEffect(() => {
+    loadUserProfile();
+  }, [user]);
 
   return (
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>

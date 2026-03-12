@@ -1,16 +1,49 @@
 import { ThemedText } from '@/components/themed-text';
+import { supabase } from "@/utils/supabase";
+import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 export default function Archive() {
   const router = useRouter();
-  
-  // Mock data - backend logic remains untouched
-  const archivedBills = [
-    { id: '2', name: 'Dinner Party', date: 'Sept 2023', totalAmount: '$145.00' },
-  ];
+
+  const { user } = useUser();
+  const [archivedBills, setArchivedBills] = useState([]);
+
+  const loadArchivedBills = async () => {
+    const { data, error } = await supabase
+      .from("bills")
+      .select("*")
+      .eq("created_by", user?.id)
+      .eq("status", "archived")
+      .order("created_at", { ascending: false });
+
+    if (!error) {
+      setArchivedBills(data);
+    } else {
+      console.error(error.message);
+    }
+  };
+
+  useEffect(() => {
+    loadArchivedBills();
+  }, []);
+
+  const restoreBill = async (billId) => {
+    const { error } = await supabase
+      .from("bills")
+      .update({ status: "active" })
+      .eq("id", billId);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    loadArchivedBills();
+  };
 
   return (
     <View style={styles.container}>
@@ -40,7 +73,9 @@ export default function Archive() {
                 <ThemedText style={styles.billName}>{bill.name}</ThemedText>
                 <View style={styles.dateRow}>
                   <Ionicons name="calendar-outline" size={12} color="#AEAEB2" />
-                  <ThemedText style={styles.billDate}> {bill.date}</ThemedText>
+                  <ThemedText style={styles.billDate}>
+                    {new Date(bill.created_at).toLocaleDateString()}
+                  </ThemedText>
                 </View>
               </View>
 
@@ -54,10 +89,21 @@ export default function Archive() {
             <View style={styles.actionRow}>
               <ThemedText style={styles.footerInfo}>Moved to archive on completion</ThemedText>
               <View style={styles.buttonGroup}>
-                <Pressable style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}>
+                <Pressable
+                  style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/viewbill",
+                      params: { billId: bill.id, billName: bill.name },
+                    })
+                  }
+                >
                   <Ionicons name="eye" size={18} color="#666" />
                 </Pressable>
-                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF5F3' }]}>
+                <Pressable
+                  style={[styles.actionIcon, { backgroundColor: '#FFF5F3' }]}
+                  onPress={() => restoreBill(bill.id)}
+                >
                   <Ionicons name="arrow-undo" size={18} color="tomato" />
                 </Pressable>
               </View>
