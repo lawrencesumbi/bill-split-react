@@ -152,16 +152,20 @@ const router = useRouter();
         if (!error) setBills(data);
     };
 
-    const archiveBill = async (billId: number) => {
-        const { error } = await supabase.from('bills').update({ status: 'archived'}).eq('id', billId);
+    const archiveBill = async (billId) => {
+        const { error } = await supabase
+            .from("bills")
+            .update({ status: "archived" })
+            .eq("id", billId);
 
-        if(error) {
-          console.error(error.message);
-          return;
+        if (error) {
+            alert(error.message);
+            return;
         }
 
-        loadBills();
-    }
+        alert("Bill archived successfully");
+        loadBills(); // refresh dashboard list
+    };
 
 
     const deleteBill = async (billId) => {
@@ -247,48 +251,58 @@ const router = useRouter();
 
         useEffect(() => {
         if (visible) {
-            loadUsersFromSupabase();
-            setLocalSelection(currentSelection); // Sync selection when opening
+            loadUsersFromSupabase("all");
+            setLocalSelection(currentSelection);
         }
         }, [visible]);
 
-        const loadUsersFromSupabase = async () => {
-  setLoading(true);
-  try {
-    // 1. Fetch Registered Users from clerk_users
-    const { data: registeredData } = await supabase
-      .from('clerk_users')
-      .select('clerk_user_id, nickname');
-    
-    const formattedRegistered = (registeredData || []).map(u => ({
-      id: u.clerk_user_id,
-      name: u.nickname || 'Unknown User',
-      uniqueKey: `r-${u.clerk_user_id}`
-    }));
+        const loadUsersFromSupabase = async (currentFilter = "all") => {
+        setLoading(true);
 
-    console.log(formattedRegistered)
+        try {
+            let users = [];
 
-    // 2. Fetch Guests from separate guests table
-    const { data: guestsData } = await supabase
-      .from('guest_users') // Assuming you have a 'guests' table
-      .select('id, first_name, last_name, email')
+            // REGISTERED USERS
+            if (currentFilter === "all" || currentFilter === "registered") {
+            const { data: registeredData } = await supabase
+                .from("clerk_users")
+                .select("clerk_user_id, nickname");
 
-    const formattedGuests = (guestsData || []).map(g => ({
-      first_name: g.first_name,
-      last_name: g.last_name,
-      email: g.email,
-      uniqueKey: `g-${g.id}`
-    }));
+            const formattedRegistered = (registeredData || []).map(u => ({
+                id: u.clerk_user_id,
+                name: u.nickname || "Unknown User",
+                type: "registered",
+                uniqueKey: `r-${u.clerk_user_id}`
+            }));
 
-    const combined = [...formattedRegistered, ...formattedGuests];
-    setAllPotentialUsers(combined);
-    applyFilters(combined, searchQuery, filter);
-  } catch (e) {
-    console.error('Error loading users:', e);
-  } finally {
-    setLoading(false);
-  }
-};
+            users = [...users, ...formattedRegistered];
+            }
+
+            // GUEST USERS
+            if (currentFilter === "all" || currentFilter === "guest") {
+            const { data: guestsData } = await supabase
+                .from("guest_users")
+                .select("id, first_name, last_name, email");
+
+            const formattedGuests = (guestsData || []).map(g => ({
+                id: g.id,
+                name: `${g.first_name} ${g.last_name}`,
+                type: "guest",
+                uniqueKey: `g-${g.id}`
+            }));
+
+            users = [...users, ...formattedGuests];
+            }
+
+            setAllPotentialUsers(users);
+            applyFilters(users, searchQuery, currentFilter);
+
+        } catch (error) {
+            console.error("Error loading users:", error);
+        } finally {
+            setLoading(false);
+        }
+        };
 
         const applyFilters = (users, query, currentFilter) => {
         let filtered = users;
@@ -314,12 +328,15 @@ const router = useRouter();
 
         // Cycle through filters (All -> Registered -> Guests -> All)
         const toggleFilter = () => {
-        let nextFilter;
-        if (filter === 'all') nextFilter = 'registered';
-        else if (filter === 'registered') nextFilter = 'guest';
-        else nextFilter = 'all';
+        let nextFilter = "all";
+
+        if (filter === "all") nextFilter = "registered";
+        else if (filter === "registered") nextFilter = "guest";
+        else nextFilter = "all";
+
         setFilter(nextFilter);
-        applyFilters(allPotentialUsers, searchQuery, nextFilter);
+
+        loadUsersFromSupabase(nextFilter);
         };
 
         const toggleSelection = (user) => {
@@ -370,8 +387,11 @@ const router = useRouter();
                 
                 <FilterBadge />
 
-                <Pressable style={styles.wireframeIconBtn} onPress={loadUsersFromSupabase}>
-                    <Ionicons name="refresh" size={18} color="#333" />
+                <Pressable
+                style={styles.wireframeIconBtn}
+                onPress={() => loadUsersFromSupabase(filter)}
+                >
+                <Ionicons name="refresh" size={18} color="#333" />
                 </Pressable>
                 
                 <Pressable style={styles.wireframeAddGuestBtn} onPress={onAddGuestPress}>
@@ -475,7 +495,12 @@ const router = useRouter();
 >
   <Ionicons name="create" size={18} color="#666" />
 </Pressable>
-                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" onPress={() => archiveBill(bill.id)} /></Pressable>
+                <Pressable
+                style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
+                onPress={() => archiveBill(bill.id)}
+                >
+                <Ionicons name="archive" size={18} color="#e48108" />
+                </Pressable>
                 <Pressable
                     style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
                     onPress={() => deleteBill(bill.id)}
