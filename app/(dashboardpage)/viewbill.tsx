@@ -19,7 +19,8 @@ export default function ViewBill() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [splitType, setSplitType] = useState('equal')
   const [involved, setInvolved] = useState([]);
-  
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Modal Visibility States
   const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([])
   const [showGuestModal, setShowGuestModal] = useState(false);
@@ -43,6 +44,16 @@ export default function ViewBill() {
   const currentUserId = user?.id;
 
   useEffect(() => { getNickname(currentUserId); }, [currentUserId]);
+
+  const totalExpense = expenses.reduce((sum, exp) => {
+  const cost = parseFloat(exp.cost || 0);
+  return sum + (isNaN(cost) ? 0 : cost);
+}, 0);
+
+   const filteredExpenses = expenses.filter(exp =>
+  exp.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  exp.paid_by?.toLowerCase().includes(searchQuery.toLowerCase())
+);
 
   const getNickname = async(id:string) => {
     const { data, error } = await supabase
@@ -555,7 +566,12 @@ export default function ViewBill() {
       <View style={styles.actionBar}>
         <View style={styles.searchSection}>
           <Pressable style={styles.glassBackBtn} onPress={() => router.back()}><Ionicons name="arrow-back" size={20} color="#1C1C1E" /></Pressable>
-          <View style={styles.searchContainer}><Ionicons name="search" size={18} color="#AEAEB2" /><TextInput style={styles.searchInput} placeholder="Search expenses..." /></View>
+                    <View style={styles.searchContainer}><Ionicons name="search" size={18} color="#AEAEB2" /><TextInput
+            style={styles.searchInput}
+            placeholder="Search expenses..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          /></View>
         </View>
         <Pressable
           style={[
@@ -587,12 +603,23 @@ export default function ViewBill() {
 
       <View style={styles.mainContent}>
         <View style={styles.leftColumn}>
-            <View style={styles.columnHeader}>
-                <ThemedText style={styles.columnTitle}>Expenses</ThemedText>
-                <ThemedText style={styles.countText}>{expenses.length} Total</ThemedText>
-            </View>
+                  <View style={styles.columnHeader}>
+          <ThemedText style={styles.columnTitle}>Expenses</ThemedText>
+          <ThemedText style={styles.countText}>{expenses.length} Total</ThemedText>
+        </View>
+
+        <View style={styles.totalExpenseCard}>
+          <View>
+            <ThemedText style={styles.totalLabel}>Total Expense</ThemedText>
+            <ThemedText style={styles.totalAmount}>₱{totalExpense.toFixed(2)}</ThemedText>
+          </View>
+
+          <View style={styles.totalIcon}>
+            <Ionicons name="wallet" size={22} color="tomato" />
+          </View>
+        </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-             {expenses.map(exp => (
+             {filteredExpenses.map(exp => (
   <View key={exp.id} style={styles.modernExpenseCard}>
     <View style={styles.cardHeader}>
       <View style={{ flex: 1 }}>
@@ -1007,4 +1034,40 @@ const styles = StyleSheet.create({
         color: '#1C1C1E',
         marginLeft: 8
     },
+    totalExpenseCard: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  backgroundColor: '#FFF',
+  padding: 18,
+  borderRadius: 18,
+  marginBottom: 16,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 6 },
+  shadowOpacity: 0.06,
+  shadowRadius: 10,
+  elevation: 3,
+},
+
+totalLabel: {
+  fontSize: 13,
+  color: '#8E8E93',
+  fontWeight: '600',
+},
+
+totalAmount: {
+  fontSize: 26,
+  fontWeight: '800',
+  color: 'tomato',
+  marginTop: 4,
+},
+
+totalIcon: {
+  width: 46,
+  height: 46,
+  borderRadius: 12,
+  backgroundColor: '#FFF5F3',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
 });
