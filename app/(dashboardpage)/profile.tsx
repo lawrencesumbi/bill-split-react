@@ -60,12 +60,6 @@ export default function Profile() {
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header Section */}
       <View style={styles.headerSection}>
-        <View style={styles.avatarPlaceholder}>
-          <ThemedText style={styles.avatarText}>{firstName[0] || 'U'}</ThemedText>
-          <Pressable style={styles.editBadge}>
-            <Ionicons name="camera" size={14} color="#fff" />
-          </Pressable>
-        </View>
         <View>
           <ThemedText style={styles.headerTitle}>Account Settings</ThemedText>
           <ThemedText style={styles.headerSubtitle}>Update your personal information and security</ThemedText>

@@ -1,17 +1,46 @@
 import { ThemedText } from '@/components/themed-text';
+import { supabase } from '@/utils/supabase';
 import { useAuth, useUser } from '@clerk/clerk-expo'; // Added useUser for a personalized touch
 import { Ionicons } from '@expo/vector-icons';
-import { Slot, usePathname, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Redirect, Slot, usePathname, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 export default function DashboardLayout() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isSignedIn, signOut } = useAuth();
+  const [userRole, setUserRole] = useState('')
+  const { signOut, isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
 
-  // if (!isSignedIn) return <Redirect href={'/sign-in'} />;
+  const fetchUserRole = async () => {
+      const { data, error } = await supabase
+      .from('user_has_roles')
+      .select(`*,
+          roles:role_id (
+              name
+          )
+          `)
+      .eq('clerk_user_id', user?.id);
 
+      if(!error) return setUserRole(data[0]?.roles.name);
+  }
+
+  useEffect(() => {
+      fetchUserRole()
+  }, []);
+
+  if (!isLoaded) {
+    return  (
+      <View style={styles.loadingContainer}>
+    <ActivityIndicator size="large" color="tomato" />
+    </View>
+  );
+  }
+  if(!isSignedIn) {
+    return <Redirect href='/(auth)/sign-in' />;
+  }
+  
   const NavItem = ({ name, icon, path }: { name: string; icon: any; path: string }) => {
     const isActive = pathname.includes(path);
     return (
@@ -30,6 +59,8 @@ export default function DashboardLayout() {
     );
   };
 
+  // if (!isSignedIn) return <Redirect href={'/(auth)/sign-in'} />;
+  
   return (
     <View style={styles.mainContainer}>
       <View style={styles.sidebar}>
@@ -52,10 +83,22 @@ export default function DashboardLayout() {
         {/* Bottom Section: User Info & Logout */}
         <View style={styles.footer}>
           <View style={styles.userCard}>
-             <ThemedText style={styles.userName}>{user?.firstName || 'User'}</ThemedText>
-             <Pressable onPress={() => signOut()} style={styles.logoutBtn}>
-                <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
-             </Pressable>
+            <View style={styles.userInfo}>
+              <ThemedText style={styles.userName}>
+                {user?.firstName || 'User'}
+              </ThemedText>
+              
+              {/* User Role Badge */}
+              <View style={styles.roleBadge}>
+                <ThemedText style={styles.roleText}>
+                  {userRole?.toUpperCase() || <ActivityIndicator color="tomato" />}
+                </ThemedText>
+              </View>
+            </View>
+
+            <Pressable onPress={() => signOut()} style={styles.logoutBtn}>
+              <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
+            </Pressable>
           </View>
         </View>
       </View>
@@ -179,5 +222,28 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#FFF0EF',
     borderRadius: 10,
-  }
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA', // Matches your main content area background
+  },
+  userInfo: {
+    flex: 1,
+    gap: 4, // Adds a tiny space between name and badge
+  },
+  roleBadge: {
+    alignSelf: 'flex-start', // Keeps badge from stretching
+    backgroundColor: '#F2F2F7', // Match the sidebar border/inactive nav
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  roleText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#8E8E93',
+    letterSpacing: 0.5,
+  },
 });

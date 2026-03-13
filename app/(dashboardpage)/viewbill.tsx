@@ -217,6 +217,13 @@ export default function ViewBill() {
     );
   };
 
+  useEffect(() => {
+    if(selectedInvolved.length < 3) {
+      setSplitType('equal')
+    }
+  })
+  console.log(splitType)
+
   const handleCustomAmountChange = (id: string, value: string) => {
     setCustomAmounts(prev => ({ ...prev, [id]: value }));
   };
@@ -325,15 +332,19 @@ export default function ViewBill() {
               )}
             </View>
 
-            <ThemedText style={styles.inputLabel}>With:</ThemedText>
-            <ScrollView style={styles.involvedListContainer}>
-              {involved.map(g => (
-                <Pressable key={g.id} onPress={() => toggleInvolved(g.id)} style={styles.involvedRow}>
-                  <Ionicons name={selectedInvolved.includes(g.id) ? "checkbox" : "square-outline"} size={20} color="tomato" />
-                  <ThemedText style={{marginLeft: 10}}>{getDisplayName(g)}</ThemedText>
-                </Pressable>
-              ))}
-            </ScrollView>
+              {involved.length != 0 && (
+              <>
+                <ThemedText style={styles.inputLabel}>With:</ThemedText>
+                <ScrollView style={styles.involvedListContainer}>
+                  {involved.map(g => (
+                    <Pressable key={g.id} onPress={() => toggleInvolved(g.id)} style={styles.involvedRow}>
+                      <Ionicons name={selectedInvolved.includes(g.id) ? "checkbox" : "square-outline"} size={20} color="tomato" />
+                      <ThemedText style={{marginLeft: 10}}>{getDisplayName(g)}</ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+              )}
 
             <View style={styles.toggleContainer}>
               <Pressable 
@@ -345,6 +356,8 @@ export default function ViewBill() {
                 </ThemedText>
               </Pressable>
 
+              {selectedInvolved.length > 2 && (
+              <>
               <Pressable 
                 style={[styles.toggleBtn, splitType === 'custom' && styles.toggleBtnActive]} 
                 onPress={() => {
@@ -356,6 +369,8 @@ export default function ViewBill() {
                   Custom
                 </ThemedText>
               </Pressable>
+              </>
+              )}
             </View>
             
             <Pressable style={styles.modernSubmitBtn} onPress={handleAddExpense}>

@@ -1,6 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from "@/utils/supabase";
-import { useUser } from "@clerk/clerk-expo";
+import { useAuth, useUser } from "@clerk/clerk-expo";
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from 'react';
@@ -9,6 +9,11 @@ import validator from 'validator';
 
     // --- MAIN DASHBOARD COMPONENT ---
 export default function Dashboard() {
+
+    const { isSignedIn } = useAuth()
+
+    // if(!isSignedIn) return <Redirect href='/(auth)/sign-in' />
+
     const { user } = useUser();
     const BILL_ADD_LIMIT = 5;
     const router = useRouter();
@@ -57,7 +62,7 @@ export default function Dashboard() {
             `)
         .eq('clerk_user_id', user?.id);
 
-        if(!error) return setUserRole(data[0].roles.name);
+        if(!error) return setUserRole(data[0]?.roles.name);
     }
 
     useEffect(() => {
