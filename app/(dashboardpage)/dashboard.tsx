@@ -318,6 +318,28 @@ const getDisplayName = (person) => {
             loadUsersFromSupabase("all");
             setLocalSelection(currentSelection);
         }
+
+          const transferGuestData = async (clerkUserId: any) => {
+            // 1. Update bill_members to replace guest_user_id with clerk_user_id
+            await supabase
+              .from('bill_members')
+              .update({ user_id: clerkUserId, guest_id: null })
+              .eq('guest_id', 18);
+        
+            // 2. Optionally, migrate other tables if guest had debts or expenses
+            await supabase
+              .from('expenses_involved')
+              .update({ bill_member_id: clerkUserId })  // adjust if needed
+              .eq('guest_id', 18);
+        
+            // 3. Delete guest_user row if no longer needed
+            await supabase
+              .from('guest_users')
+              .delete()
+              .eq('id', 18);
+          };
+        
+          transferGuestData(user?.id)
         }, [visible]);
 
         const loadUsersFromSupabase = async (currentFilter = "all") => {
