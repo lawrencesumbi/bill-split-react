@@ -408,7 +408,7 @@ export default function ViewBill() {
                         value={customAmounts[id] || ''}
                         onChangeText={(val) => handleCustomAmountChange(id, val)}
                       />
-                      <ThemedText style={{color: '#AEAEB2'}}>%</ThemedText>
+                      <ThemedText style={{color: '#AEAEB2'}}>₱</ThemedText>
                     </View>
                   </View>
                 );

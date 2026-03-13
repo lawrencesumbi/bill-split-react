@@ -28,7 +28,7 @@ export default function DashboardLayout() {
 
   useEffect(() => {
       fetchUserRole()
-  }, []);
+  });
 
   if (!isLoaded) {
     return  (
