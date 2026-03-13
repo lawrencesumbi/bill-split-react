@@ -19,6 +19,9 @@ export default function ViewBill() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [splitType, setSplitType] = useState('equal')
   const [involved, setInvolved] = useState([]);
+
+  const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   
   // Modal Visibility States
   const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([])
@@ -37,6 +40,7 @@ export default function ViewBill() {
   const [expCost, setExpCost] = useState('');
   const [expPaidBy, setExpPaidBy] = useState("");
   const [selectedInvolved, setSelectedInvolved] = useState<string[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [billStatus, setBillStatus] = useState('');
 
@@ -58,6 +62,65 @@ export default function ViewBill() {
     setShowSelectPeopleModal(false);
     setShowGuestModal(true)
   }
+
+  const handleEditExpense = async (exp: any) => {
+  setIsEditing(true);
+  setEditingExpenseId(exp.id);
+
+  setExpName(exp.name);
+  setExpCost(exp.cost.toString());
+  setExpPaidBy(exp.paid_by);
+
+  // fetch involved people
+  const { data, error } = await supabase
+    .from("expenses_involved")
+    .select("bill_member_id, amount_spent")
+    .eq("expenses_id", exp.id);
+
+  if (!error && data) {
+    // store selected ids
+    const selectedIds = data.map(i => i.bill_member_id);
+    setSelectedInvolved(selectedIds);
+
+    // store custom amounts
+    const amounts = {};
+    data.forEach(i => {
+      amounts[i.bill_member_id] = i.amount_spent.toString();
+    });
+
+    setCustomAmounts(amounts);
+  }
+
+  setShowExpenseModal(true);
+};
+
+  const handleUpdateExpense = async () => {
+  if (!editingExpenseId) return;
+
+  try {
+    const { error } = await supabase
+      .from("expenses")
+      .update({
+        name: expName,
+        cost: parseFloat(expCost),
+        paid_by: expPaidBy
+      })
+      .eq("id", editingExpenseId);
+
+    if (error) throw error;
+
+    Alert.alert("Success", "Expense updated");
+
+    setShowEditExpenseModal(false);
+    setEditingExpenseId(null);
+
+    fetchExpenses();
+
+  } catch (err) {
+    console.error(err);
+    Alert.alert("Error", "Failed to update expense");
+  }
+};
 
   console.log("involved: ", involved)
   
@@ -220,6 +283,20 @@ export default function ViewBill() {
       Alert.alert("Failed to add expense", "Please try again.");
     }
   };
+
+  const handleDelete = async (expenseId: string) => {
+    try {
+      const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', expenseId)
+
+      alert('success');
+      fetchExpenses()
+    } catch(err) {
+      console.error(err)
+    }
+  }
   
   const toggleInvolved = (id: string) => {
     setSelectedInvolved(prev => 
@@ -562,7 +639,16 @@ export default function ViewBill() {
             styles.modernAddBtn,
             billStatus === "archived" && { opacity: 0.5 }
           ]}
-          onPress={() => setShowExpenseModal(true)}
+          onPress={() => {
+               setIsEditing(false);
+
+              setExpName('');
+              setExpCost('');
+              setSelectedInvolved([]);
+              setCustomAmounts({});
+
+              setShowExpenseModal(true);
+            }}
           disabled={billStatus === "archived"}
         >
           <Ionicons name="add" size={20} color="#FFF" /><ThemedText style={styles.addBtnText}>Add Expense</ThemedText>
@@ -606,13 +692,13 @@ export default function ViewBill() {
         <ThemedText style={styles.expAmount}>₱{exp.cost}</ThemedText>
         {/* SIDE BY SIDE ICONS CONTAINER */}
         <View style={styles.iconActionsRow}>
-          <Pressable style={styles.iconPadding} onPress={() => {/* Edit Logic */}}>
+          <Pressable style={styles.iconPadding} onPress={() => {handleEditExpense(exp)}}>
             <Ionicons name="pencil" size={18} color="#007AFF" />
           </Pressable>
-          <Pressable style={styles.iconPadding} onPress={() => {/* Delete Logic */}}>
+          <Pressable style={styles.iconPadding} onPress={() => {handleDelete(exp.id)}}>
             <Ionicons name="trash" size={18} color="tomato" />
           </Pressable>
-          <Pressable style={styles.iconPadding} onPress={() => {/* Delete Logic */}}>
+          <Pressable style={styles.iconPadding} onPress={() => {/* Test */ }}>
             <Ionicons name="eye" size={18} color="grey" />
           </Pressable>
         </View>
@@ -647,6 +733,8 @@ export default function ViewBill() {
           </ScrollView>
         </View>
       </View>
+
+
 
       {/* ADD EXPENSE MODAL */}
       <Modal visible={showExpenseModal} transparent animationType="fade">
@@ -731,6 +819,75 @@ export default function ViewBill() {
           </View>
         </View>
       </Modal>
+
+      {/* EDIT EXPENSE MODAL */}
+<Modal visible={showEditExpenseModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.modernModalBox}>
+
+      <View style={styles.modalHeader}>
+        <ThemedText style={styles.modalTitle}>Edit Expense</ThemedText>
+        <Pressable style={styles.closeBtn} onPress={() => setShowEditExpenseModal(false)}>
+          <ThemedText style={{fontWeight: '700'}}>Close</ThemedText>
+        </Pressable>
+      </View>
+
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Name</ThemedText>
+        <TextInput
+          style={styles.modernInput}
+          value={expName}
+          onChangeText={setExpName}
+        />
+      </View>
+
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Cost</ThemedText>
+        <TextInput
+          style={styles.modernInput}
+          value={expCost}
+          onChangeText={setExpCost}
+          keyboardType="numeric"
+        />
+      </View>
+
+      {/* Paid by dropdown */}
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Paid by</ThemedText>
+
+        <Pressable
+          style={[styles.modernInput, styles.dropdownTrigger]}
+          onPress={() => setShowPaidByDropdown(!showPaidByDropdown)}
+        >
+          <ThemedText>{expPaidBy}</ThemedText>
+          <Ionicons name="chevron-down" size={18} color="#AEAEB2" />
+        </Pressable>
+
+        {showPaidByDropdown && (
+          <View style={styles.dropdownMenu}>
+            {involved.map(g => (
+              <Pressable
+                key={g.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setExpPaidBy(getDisplayName(g));
+                  setShowPaidByDropdown(false);
+                }}
+              >
+                <ThemedText>{getDisplayName(g)}</ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <Pressable style={styles.modernSubmitBtn} onPress={handleUpdateExpense}>
+        <ThemedText style={styles.submitBtnText}>Save Changes</ThemedText>
+      </Pressable>
+
+    </View>
+  </View>
+</Modal>
 
       {/* CUSTOM SPLIT MODAL (Based on your new Wireframe) */}
       <Modal visible={showCustomModal} transparent animationType="slide">
