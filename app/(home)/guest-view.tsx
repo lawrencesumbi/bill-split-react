@@ -17,13 +17,16 @@ import {
 } from 'react-native';
 
 export default function GuestBillView() {
-  const { inviteCode, billId } = useLocalSearchParams();
+  const { inviteCode, billId, guestEmail } = useLocalSearchParams();
   const router = useRouter();
 
   const [bill, setBill] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [involved, setInvolved] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [guestInfo, setGuestInfo] = useState([]);
+  const [guestFirstName, setGuestFirstName] = useState('');
+  const [guestLastName, setGuestLastName] = useState('');
 
   // Modal & Password States
   const [showSignUpModal, setShowSignUpModal] = useState(false);
@@ -33,7 +36,29 @@ export default function GuestBillView() {
 
   useEffect(() => {
     fetchGuestBillData();
+    fetchGuestInfo();
   }, [inviteCode]);
+
+  const fetchGuestInfo = async() => {
+    try {
+      const { data: guestData } = await supabase
+      .from('guest_users')
+      .select('*')
+      .eq('email', guestEmail)
+      .single()
+
+      const guest = guestData
+
+      console.log(guest)
+
+      if(guest) {
+        setGuestFirstName(guest.first_name);
+        setGuestLastName(guest.last_name);
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
   const fetchGuestBillData = async () => {
     if (!inviteCode) return;
@@ -70,6 +95,8 @@ export default function GuestBillView() {
       setLoading(false);
     }
   };
+
+  
 
   const getDisplayName = (member) => {
     if (member.clerk_users?.nickname) return member.clerk_users.nickname;
@@ -179,7 +206,13 @@ export default function GuestBillView() {
             
             <View style={styles.spacer} />
 
-            <Pressable style={styles.modernSubmitBtn} onPress={() => setShowSignUpModal(true)}>
+            <Pressable 
+              style={styles.modernSubmitBtn} 
+              onPress={() => router.push({
+                pathname: '/(auth)/sign-up',
+                params: { gFName: guestFirstName, gLName: guestLastName, gEmail: guestEmail }
+              })}
+            >
               <ThemedText style={styles.submitBtnText}>Sign Up</ThemedText>
             </Pressable>
           </View>

@@ -60,67 +60,104 @@ export default function Page() {
 
   // console.log(bill)
 
-  const handleEmailSubmit = async () => {
-    // Logic to check if email exists would go here
-    // If not exists, move to step 3
+const handleEmailSubmit = async () => {
+  if (!validator.isEmail(email)) {
+    alert('Incorrect email format.');
+    return;
+  }
 
-    if(!validator.isEmail(email)) {
-      alert('incorrect email format.');
+  try {
+    // Fetch bill members with guest_users
+    const { data: fetchedBillMembers, error } = await supabase
+      .from('bill_members')
+      .select(`*, guest_users:guest_id (email)`)
+      .eq('bill_id', bill.id);
+
+    if (error) {
+      console.log(error);
+      alert('Failed to fetch bill members.');
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-      .from('bill_members')
-      .select(`*,
-        guest_users:guest_id (
-        email
-        )`)
-      .eq('bill_id', bill.id)
+    // Check if the email exists
+    const guestExists = fetchedBillMembers?.some(
+      (bm) => bm.guest_users?.email === email
+    );
 
-      let fetchedBillMembers = data
+    if (guestExists) {
+      alert('Success! Email found.');
+      router.push({
+        pathname: '/guest-view',
+        params: { billId: bill.id, inviteCode: bill.invite_code, guestEmail: email }
+      });
+      setModalVisible(false);
+    } else {
+      // Email not found, move to register guest
+      setModalStep(3);
+    }
+  } catch (err) {
+    console.log(err);
+    alert('An unexpected error occurred.');
+  }
+};
 
-      fetchedBillMembers?.map(bm => {
-        if(validator.equals(email, bm.guest_users.email)) {
-            alert('success')
-              router.push({
-                pathname: '/guest-view',
-                params: { billId: bill.id, inviteCode: bill.invite_code} 
-              })
-              setModalVisible(false)
-              setIsFound(true)
-              return;
-          }
-        })     
-        fetchedBillMembers = null
-      } catch (err) {
-        console.log(err)
+const handleRegisterGuest = async () => {
+  // Validate inputs first
+  if (!firstName || !lastName || !validator.isEmail(email)) {
+    alert('Please enter valid first name, last name, and email.');
+    return;
+  }
+
+  try {
+    // Insert into guest_users table
+    const { data: newGuest, error: insertError } = await supabase
+      .from('guest_users')
+      .insert([{ first_name: firstName, last_name: lastName, email }])
+      .select()
+      .single(); // get the newly created guest
+
+    if (insertError) {
+      console.log(insertError);
+      alert('Failed to create guest. Try again.');
+      return;
+    }
+
+    console.log('Guest created:', newGuest);
+
+    // OPTIONAL: Add guest to bill_members table if you have bill.id
+    if (bill?.id) {
+      const { error: bmError } = await supabase.from('bill_members').insert([{
+        bill_id: bill.id,
+        guest_id: newGuest.id
+      }]);
+
+      if (bmError) {
+        console.log(bmError);
+        alert('Failed to link guest to bill.');
+        return;
       }
-      
-      if(!isFound) {
-        alert('Email not found.');
-        setModalStep(3)
-      }
-  };
+    }
 
-const handleRegisterGuest = () => {
-    console.log("Registering Guest:", { firstName, lastName, email, inviteCode });
-    
-    // CLOSE MODAL
+    // Close modal
     setModalVisible(false);
 
-    // NAVIGATE TO THE GUEST VIEW
-    // We pass the inviteCode so the next page knows which bill to fetch
+    // Navigate to guest view
     router.push({
-      pathname: '/guest-view', 
+      pathname: '/guest-view',
       params: { inviteCode: inviteCode }
     });
 
-    // Reset state after a delay to keep the transition smooth
+    // Reset modal after short delay
     setTimeout(() => {
       resetModal();
     }, 500);
-  };
+
+  } catch (err) {
+    console.log(err);
+    alert('An unexpected error occurred.');
+  }
+};
+
   const resetModal = () => {
     setModalVisible(false);
     setTimeout(() => {

@@ -2,7 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/utils/supabase';
 import { useSignUp } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons'; // Added for the back icon
-import { Link, useRouter } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import * as React from 'react';
 import { ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import validator from 'validator';
@@ -10,7 +10,8 @@ import validator from 'validator';
 export default function Page() {
   const { isLoaded, signUp, setActive } = useSignUp();
   const router = useRouter();
-  
+  const { gFName, gLName, gEmail } = useLocalSearchParams();
+
   // States
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
@@ -27,6 +28,7 @@ export default function Page() {
   const [users, setUsers] = React.useState([]);
   const [signupLoading, setSignupLoading] = React.useState(false);
 
+
   React.useEffect(() => {
     const getUsers = async () => {
       try {
@@ -34,6 +36,22 @@ export default function Page() {
         if (clerk_users) setUsers(clerk_users);
       } catch (error) { console.error(error); }
     };
+
+    const loadGuestInfo = () => {
+      if(gFName) {
+        setFirstName(gFName)
+      }
+
+      if(gLName) {
+        setLastName(gLName)
+      }
+
+      if(gEmail) {
+        setEmailAddress(gEmail)
+      }
+    }
+
+    loadGuestInfo();
     getUsers();
   }, []);
 
