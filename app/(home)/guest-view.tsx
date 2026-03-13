@@ -357,7 +357,9 @@ const styles = StyleSheet.create({
   spacer: { height: 20 },
   modernSubmitBtn: { backgroundColor: '#1C1C1E', padding: 18, borderRadius: 18, alignItems: 'center' },
   submitBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
-  mobileFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F2F2F7' },
+  mobileFooter: { position: 'absolute', bottom: 0, 
+    
+    left: 0, right: 0, padding: 24, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F2F2F7' },
 
   // MODAL STYLES
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
