@@ -1617,7 +1617,7 @@ errorText: {
 },
 disabledBtn: {
   opacity: 0.5
-}
+},
 personCard: {
   flexDirection: 'row',
   alignItems: 'center',
