@@ -60,6 +60,7 @@ export default function DashboardLayout() {
     );
   };
 
+  const isStandard = userRole?.toLowerCase() === 'standard';
   const isPremium = userRole?.toLowerCase() === 'premium';
 
   return (
@@ -82,7 +83,7 @@ export default function DashboardLayout() {
         </View>
 
         <View>
-          {!isPremium && (
+          {isStandard && (
             <Pressable 
               style={styles.upgradeCard} 
               onPress={() => router.push('/(dashboardpage)/upgrade' as any)}

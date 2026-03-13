@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 export default function GuestBillView() {
-  const { inviteCode } = useLocalSearchParams();
+  const { inviteCode, billId } = useLocalSearchParams();
   const router = useRouter();
 
   const [bill, setBill] = useState(null);
@@ -21,6 +21,8 @@ export default function GuestBillView() {
   const fetchGuestBillData = async () => {
     if (!inviteCode) return;
 
+    setLoading(true)
+    
     try {
       // 1. Fetch the Bill
       const { data: billData } = await supabase

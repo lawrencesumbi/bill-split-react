@@ -415,7 +415,7 @@ const getDisplayName = (person) => {
         const handleConfirm = () => {
 
         if(validator.equals(userRole, 'Standard') && localSelection.length > 3 || selectedInvolvedPeople.length > 3) {
-            alert('You have reached the maximum people to be involved with, MAX: 3');
+            alert('You have reached the maximum people to be involved with, MAX: 3.');
             return;
         }
 
