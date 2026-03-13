@@ -24,6 +24,8 @@ export default function Page() {
   const [bill, setBill] = React.useState([])
   const [billMembers, setBillMembers] = React.useState([])
   const [isFound, setIsFound] = React.useState(false)
+  const [archivedModalVisible, setArchivedModalVisible] = React.useState(false);
+  
   // Form States
   const [inviteCode, setInviteCode] = React.useState('');
   const [email, setEmail] = React.useState('');
@@ -40,10 +42,14 @@ export default function Page() {
 
       const fetchedBill = data[0]
       
-          if(validator.equals(fetchedBill?.status, 'archived')) {
-            alert("You can't access an archived bill.");
-            return;
-          }
+      if (validator.equals(fetchedBill?.status, 'archived')) {
+  // Close the invite code modal
+  setModalVisible(false);
+
+  // Show the archived modal
+  setArchivedModalVisible(true);
+  return;
+}
 
 
           if (validator.equals(fetchedBill?.invite_code, inviteCode)) {
@@ -60,67 +66,104 @@ export default function Page() {
 
   // console.log(bill)
 
-  const handleEmailSubmit = async () => {
-    // Logic to check if email exists would go here
-    // If not exists, move to step 3
+const handleEmailSubmit = async () => {
+  if (!validator.isEmail(email)) {
+    alert('Incorrect email format.');
+    return;
+  }
 
-    if(!validator.isEmail(email)) {
-      alert('incorrect email format.');
+  try {
+    // Fetch bill members with guest_users
+    const { data: fetchedBillMembers, error } = await supabase
+      .from('bill_members')
+      .select(`*, guest_users:guest_id (email)`)
+      .eq('bill_id', bill.id);
+
+    if (error) {
+      console.log(error);
+      alert('Failed to fetch bill members.');
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-      .from('bill_members')
-      .select(`*,
-        guest_users:guest_id (
-        email
-        )`)
-      .eq('bill_id', bill.id)
+    // Check if the email exists
+    const guestExists = fetchedBillMembers?.some(
+      (bm) => bm.guest_users?.email === email
+    );
 
-      let fetchedBillMembers = data
+    if (guestExists) {
+      alert('Success! Email found.');
+      router.push({
+        pathname: '/guest-view',
+        params: { billId: bill.id, inviteCode: bill.invite_code, guestEmail: email }
+      });
+      setModalVisible(false);
+    } else {
+      // Email not found, move to register guest
+      setModalStep(3);
+    }
+  } catch (err) {
+    console.log(err);
+    alert('An unexpected error occurred.');
+  }
+};
 
-      fetchedBillMembers?.map(bm => {
-        if(validator.equals(email, bm.guest_users.email)) {
-            alert('success')
-              router.push({
-                pathname: '/guest-view',
-                params: { billId: bill.id, inviteCode: bill.invite_code} 
-              })
-              setModalVisible(false)
-              setIsFound(true)
-              return;
-          }
-        })     
-        fetchedBillMembers = null
-      } catch (err) {
-        console.log(err)
+const handleRegisterGuest = async () => {
+  // Validate inputs first
+  if (!firstName || !lastName || !validator.isEmail(email)) {
+    alert('Please enter valid first name, last name, and email.');
+    return;
+  }
+
+  try {
+    // Insert into guest_users table
+    const { data: newGuest, error: insertError } = await supabase
+      .from('guest_users')
+      .insert([{ first_name: firstName, last_name: lastName, email }])
+      .select()
+      .single(); // get the newly created guest
+
+    if (insertError) {
+      console.log(insertError);
+      alert('Failed to create guest. Try again.');
+      return;
+    }
+
+    console.log('Guest created:', newGuest);
+
+    // OPTIONAL: Add guest to bill_members table if you have bill.id
+    if (bill?.id) {
+      const { error: bmError } = await supabase.from('bill_members').insert([{
+        bill_id: bill.id,
+        guest_id: newGuest.id
+      }]);
+
+      if (bmError) {
+        console.log(bmError);
+        alert('Failed to link guest to bill.');
+        return;
       }
-      
-      if(!isFound) {
-        alert('Email not found.');
-        setModalStep(3)
-      }
-  };
+    }
 
-const handleRegisterGuest = () => {
-    console.log("Registering Guest:", { firstName, lastName, email, inviteCode });
-    
-    // CLOSE MODAL
+    // Close modal
     setModalVisible(false);
 
-    // NAVIGATE TO THE GUEST VIEW
-    // We pass the inviteCode so the next page knows which bill to fetch
+    // Navigate to guest view
     router.push({
-      pathname: '/guest-view', 
-      params: { inviteCode: inviteCode }
+      pathname: '/guest-view',
+      params: { inviteCode: inviteCode, guestEmail: email }
     });
 
-    // Reset state after a delay to keep the transition smooth
+    // Reset modal after short delay
     setTimeout(() => {
       resetModal();
     }, 500);
-  };
+
+  } catch (err) {
+    console.log(err);
+    alert('An unexpected error occurred.');
+  }
+};
+
   const resetModal = () => {
     setModalVisible(false);
     setTimeout(() => {
@@ -177,6 +220,29 @@ const handleRegisterGuest = () => {
           </SignedIn>
         </View>
       </View>
+  
+  <Modal
+  animationType="slide"
+  transparent={true}
+  visible={archivedModalVisible}
+  onRequestClose={() => setArchivedModalVisible(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContent}>
+      <View style={styles.modalHandle} />
+      <ThemedText style={styles.modalTitle}>Archived Bill</ThemedText>
+      <ThemedText style={styles.modalSubtitle}>
+        You can't access an archived bill.
+      </ThemedText>
+      <Pressable
+        style={styles.primaryButtonLarge}
+        onPress={() => setArchivedModalVisible(false)}
+      >
+        <ThemedText style={styles.primaryButtonText}>Close</ThemedText>
+      </Pressable>
+    </View>
+  </View>
+</Modal> 
 
       <Modal
         animationType="slide"
@@ -316,6 +382,7 @@ const styles = StyleSheet.create({
   welcomeBack: { color: '#fff', fontSize: 16, textAlign: 'center', marginBottom: 15, fontWeight: '600' },
   inviteLinkContainer: { marginTop: 25, alignItems: 'center' },
   inviteLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, textDecorationLine: 'underline' },
+  
 
   /* --- MODAL CORE STYLES --- */
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },

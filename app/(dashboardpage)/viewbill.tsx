@@ -973,14 +973,51 @@ const handleSplitTypeChange = (type: string) => {
               <Ionicons name="person-add" size={16} color="tomato" />
             </Pressable>
           </View>
-          <ScrollView>
-            {involved.filter(i => i.user_id !== user?.id).map(involve => (
-              <View key={involve.id} style={styles.modernPersonRow}>
-                {/* <View style={styles.modernAvatar}><ThemedText style={styles.avatarText}>{involve.clerk_users.nickname}</ThemedText></View> */}
-                <ThemedText style={styles.personName}>{getDisplayName(involve)}</ThemedText>
-              </View>
-            ))}
-          </ScrollView>
+        <ScrollView showsVerticalScrollIndicator={false}>
+  {involved.filter(i => i.user_id !== user?.id).length === 0 ? (
+    <View style={styles.emptyPeople}>
+      <Ionicons name="people-outline" size={36} color="#D1D1D6" />
+      <ThemedText style={styles.emptyText}>
+        No people added yet
+      </ThemedText>
+    </View>
+  ) : (
+    involved
+      .filter(i => i.user_id !== user?.id)
+      .map((person) => {
+        const name = getDisplayName(person);
+
+        const type =
+          person.user_id !== null ? "Registered User" : "Guest";
+
+        return (
+          <View key={person.id} style={styles.personCard}>
+            
+            {/* Avatar */}
+            <View style={styles.avatarCircle}>
+              <Ionicons
+                name={person.user_id ? "at-circle" : "person"}
+                size={20}
+                color="tomato"
+              />
+            </View>
+
+            {/* Name + Type */}
+            <View style={{ flex: 1 }}>
+              <ThemedText style={styles.personName}>
+                {name}
+              </ThemedText>
+
+              <ThemedText style={styles.personType}>
+                {type}
+              </ThemedText>
+            </View>
+
+          </View>
+        );
+      })
+  )}
+</ScrollView>
         </View>
       </View>
 
@@ -1581,4 +1618,41 @@ errorText: {
 disabledBtn: {
   opacity: 0.5
 }
+personCard: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#FFF',
+  padding: 12,
+  borderRadius: 14,
+  marginBottom: 10,
+  borderWidth: 1,
+  borderColor: '#F2F2F7'
+},
+
+avatarCircle: {
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  backgroundColor: '#FFF5F3',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 10
+},
+
+personType: {
+  fontSize: 12,
+  color: '#8E8E93',
+  marginTop: 2
+},
+
+emptyPeople: {
+  alignItems: 'center',
+  marginTop: 40
+},
+
+emptyText: {
+  color: '#8E8E93',
+  marginTop: 8,
+  fontSize: 14
+},
 });

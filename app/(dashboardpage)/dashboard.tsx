@@ -17,12 +17,14 @@ const router = useRouter();
     const [inviteCode, setInviteCode] = useState(generateInviteCode());
     const [showAddGuestModal, setShowAddGuestModal] = useState(false);
     const [userRole, setUserRole] = useState('')
-
+   const [showLimitModal, setShowLimitModal] = useState(false);
     const [guestFirst, setGuestFirst] = useState("");
     const [guestLast, setGuestLast] = useState("");
     const [guestEmail, setGuestEmail] = useState("");
-
+   const [showPeopleLimitModal, setShowPeopleLimitModal] = useState(false);
     const BILL_ADD_LIMIT = 5;
+     const [showValidationModal, setShowValidationModal] = useState(false);
+const [validationMessage, setValidationMessage] = useState('');
 
     const [errors, setErrors] = useState({});
 
@@ -74,9 +76,9 @@ const router = useRouter();
   }
   
   if (validator.equals(userRole, 'Standard') && getBillEntries() >= BILL_ADD_LIMIT) { 
-    alert("You have reached the maximum bills to add this month."); 
-    return;
-  }
+  setShowLimitModal(true);
+  return;
+}
 
   // Check if trying to add more than 3 people (Standard users)
   if (validator.equals(userRole, 'Standard') && selectedInvolvedPeople.length > 3) {
@@ -312,6 +314,28 @@ const getDisplayName = (person) => {
             loadUsersFromSupabase("all");
             setLocalSelection(currentSelection);
         }
+
+          const transferGuestData = async (clerkUserId: any) => {
+            // 1. Update bill_members to replace guest_user_id with clerk_user_id
+            await supabase
+              .from('bill_members')
+              .update({ user_id: clerkUserId, guest_id: null })
+              .eq('guest_id', 18);
+        
+            // 2. Optionally, migrate other tables if guest had debts or expenses
+            await supabase
+              .from('expenses_involved')
+              .update({ bill_member_id: clerkUserId })  // adjust if needed
+              .eq('guest_id', 18);
+        
+            // 3. Delete guest_user row if no longer needed
+            await supabase
+              .from('guest_users')
+              .delete()
+              .eq('id', 18);
+          };
+        
+          transferGuestData(user?.id)
         }, [visible]);
 
         const loadUsersFromSupabase = async (currentFilter = "all") => {
@@ -408,10 +432,13 @@ const getDisplayName = (person) => {
 
         const handleConfirm = () => {
 
-        if(validator.equals(userRole, 'Standard') && localSelection.length > 3 || selectedInvolvedPeople.length > 3) {
-            alert('You have reached the maximum people to be involved with, MAX: 3.');
-            return;
-        }
+        if (
+                validator.equals(userRole, 'Standard') &&
+                (localSelection.length > 3 || selectedInvolvedPeople.length > 3)
+                ) {
+                setShowPeopleLimitModal(true);
+                return;
+}
 
         onConfirm(localSelection); // Pass local choices up to parent
         onClose();
@@ -644,6 +671,57 @@ const getDisplayName = (person) => {
             </View>
         </Modal>
 
+         {/* BILL LIMIT MODAL */}
+<Modal visible={showLimitModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.limitModalBox}>
+
+      <Ionicons name="warning-outline" size={48} color="tomato" />
+
+      <ThemedText style={styles.limitTitle}>
+        Monthly Limit Reached
+      </ThemedText>
+
+      <ThemedText style={styles.limitMessage}>
+        You have reached the maximum number of bills allowed this month.
+      </ThemedText>
+
+      <Pressable
+        style={styles.limitBtn}
+        onPress={() => setShowLimitModal(false)}
+      >
+        <ThemedText style={styles.limitBtnText}>OK</ThemedText>
+      </Pressable>
+
+    </View>
+  </View>
+
+</Modal>{/* PEOPLE LIMIT MODAL */}
+<Modal visible={showPeopleLimitModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.limitModalBox}>
+
+      <Ionicons name="people-outline" size={48} color="tomato" />
+
+      <ThemedText style={styles.limitTitle}>
+        Maximum People Reached
+      </ThemedText>
+
+      <ThemedText style={styles.limitMessage}>
+        Standard users can only add up to 3 people in a bill.
+      </ThemedText>
+
+      <Pressable
+        style={styles.limitBtn}
+        onPress={() => setShowPeopleLimitModal(false)}
+      >
+        <ThemedText style={styles.limitBtnText}>OK</ThemedText>
+      </Pressable>
+
+    </View>
+  </View>
+</Modal>
+
         {/* ADD GUEST MODAL (BASED ON WIREFRAME) */}
             <Modal visible={showAddGuestModal} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
@@ -839,4 +917,39 @@ const getDisplayName = (person) => {
         backgroundColor: 'tomato', borderRadius: 12
     },
     confirmBtnText: { fontSize: 16, color: '#fff', fontWeight: '700' },
+    limitModalBox: {
+  width: 320,
+  backgroundColor: '#fff',
+  borderRadius: 22,
+  padding: 25,
+  alignItems: 'center'
+},
+
+limitTitle: {
+  fontSize: 20,
+  fontWeight: '800',
+  marginTop: 10,
+  color: '#1C1C1E'
+},
+
+limitMessage: {
+  fontSize: 14,
+  color: '#8E8E93',
+  textAlign: 'center',
+  marginTop: 8,
+  marginBottom: 20
+},
+
+limitBtn: {
+  backgroundColor: 'tomato',
+  paddingVertical: 10,
+  paddingHorizontal: 30,
+  borderRadius: 12
+},
+
+limitBtnText: {
+  color: '#fff',
+  fontWeight: '700',
+  fontSize: 16
+},
     });
