@@ -44,103 +44,157 @@ const router = useRouter();
         setShowSelectPeopleModal(true);  // Return to the list modal
     };
 
+    const fetchUserRole = async () => {
+        const { data, error } = await supabase
+        .from('user_has_roles')
+        .select(`*,
+            roles:role_id (
+                name
+            )
+            `)
+        .eq('clerk_user_id', user?.id);
+
+        if(!error) return setUserRole(data[0]?.roles.name);
+    }
+
+    useEffect(() => {
+        fetchUserRole()
+    }, []);
+
+    console.log(userRole)
+    console.log("selected involved people: ", selectedInvolvedPeople);
 
     const createBill = async () => {
-    if (!billName) { alert("Bill name required"); return; }
+  if (!billName) { alert("Bill name required"); return; }
+  if (validator.equals(userRole, 'Standard') && getBillEntries() >= BILL_ADD_LIMIT) { 
+    alert("You have reached the maximum bills to add this month."); 
+    return;
+  }
 
-    const { data, error } = await supabase
-        .from("bills")
-        .insert([{ name: billName, invite_code: inviteCode, created_by: user?.id }])
-        .select()
-        .single();
+  const { data, error } = await supabase
+    .from("bills")
+    .insert([{ name: billName, invite_code: inviteCode, created_by: user?.id }])
+    .select()
+    .single();
 
-    if (error) { 
-        alert(error.message); 
-        return; 
-    }
+  if (error) { 
+    alert(error.message); 
+    return; 
+  }
 
-    const billId = data.id;
-    
-   
-    if (selectedInvolvedPeople.length > 0) {
-        const memberInserts = [];
+  const billId = data.id;
 
-        for (const person of selectedInvolvedPeople) {
-            
-            // Check if this is a registered user (has UUID format or 'r-' prefix)
-            const isRegisteredUser = person.uniqueKey?.startsWith('r-') || 
-                                    (person.id && person.id.includes('-') && person.id.length > 20);
+  // Only add selected members (NO automatic creator addition)
+  if (selectedInvolvedPeople.length > 0) {
+    const memberInserts = [];
 
-            if (isRegisteredUser) {
-                // REGISTERED USER
-                memberInserts.push({
-                    bill_id: billId,
-                    user_id: person.id,
-                    guest_id: null
-                });
-            } else {
-                // GUEST USER
-                // Check if guest already exists
-                const { data: existingGuest } = await supabase
-                    .from("guest_users")
-                    .select("id")
-                    .eq("email", person.email)
-                    .maybeSingle();
+    for (const person of selectedInvolvedPeople) {
+      // Check if this is a registered user
+      // Fix: Check if person.id exists and is a string before using string methods
+      const isRegisteredUser = 
+        person.type === 'registered' || 
+        (person.uniqueKey && person.uniqueKey.startsWith('r-')) ||
+        (person.id && typeof person.id === 'string' && 
+         (person.id.includes('-') && person.id.length > 20));
 
+      if (isRegisteredUser) {
+        // REGISTERED USER
+        memberInserts.push({
+          bill_id: billId,
+          user_id: person.id,
+          guest_id: null
+        });
+      } else {
+        // GUEST USER
+        // Check if guest already exists by email
                 let guestId;
-
-                if (existingGuest) {
-                    guestId = existingGuest.id;
-                } else {
-                    // Insert new guest
-                    const nameParts = person.name.split(' ');
-                    const firstName = nameParts[0] || '';
-                    const lastName = nameParts.slice(1).join(' ') || '';
-
-                    const { data: guestData, error: guestError } = await supabase
-                        .from("guest_users")
-                        .insert({
-                            first_name: firstName,
-                            last_name: lastName,
-                            email: person.email
-                        })
-                        .select()
-                        .single();
-
-                    if (guestError) {
-                        console.error("Error creating guest:", guestError);
-                        continue;
-                    }
-                    
-                    guestId = guestData.id;
-                }
-
-                memberInserts.push({
-                    bill_id: billId,
-                    user_id: null,
-                    guest_id: guestId
-                });
-            }
+        
+        if (person.uniqueKey && person.uniqueKey.startsWith('g-')) {
+          // Extract the numeric ID from "g-5" format
+          guestId = person.uniqueKey.replace('g-', '');
+        } else {
+          // Fallback to person.id
+          guestId = person.id;
         }
 
-        // Insert all selected members
-        if (memberInserts.length > 0) {
-            const { error: membersError } = await supabase
-                .from("bill_members")
-                .insert(memberInserts);
+        // For guests from the selection modal, they already exist in guest_users
+        // So we just need to add them to bill_members
+        memberInserts.push({
+          bill_id: billId,
+          user_id: null,
+          guest_id: guestId  // Use the extracted guest ID
+        });
+        //  else {
+        //   // Parse name for guest
+        //   let firstName = '';
+        //   let lastName = '';
+          
+        //   if (person.name) {
+        //     const nameParts = person.name.split(' ');
+        //     firstName = nameParts[0] || '';
+        //     lastName = nameParts.slice(1).join(' ') || '';
+        //   } else if (person.first_name) {
+        //     firstName = person.first_name;
+        //     lastName = person.last_name || '';
+        //   }
 
-            if (membersError) {
-                console.error("Error inserting members:", membersError);
-                alert("Error adding members to bill");
-                return;
-            }
-        }
+        //   // Insert new guest
+        // //   const { data: guestData, error: guestError } = await supabase
+        // //     .from("guest_users")
+        // //     .insert({
+        // //       first_name: firstName,
+        // //       last_name: lastName,
+        // //       email: person.email
+        // //     })
+        // //     .select()
+        // //     .single();
+
+        // //   if (guestError) {
+        // //     console.error("Error creating guest:", guestError);
+        // //     continue;
+        // //   }
+          
+        //   guestId = guestData.id;
+        // }
+      }
     }
 
-    loadBills();
-    setShowAddModal(false);
-    resetForm();
+    // Insert all selected members
+    if (memberInserts.length > 0) {
+      const { error: membersError } = await supabase
+        .from("bill_members")
+        .insert(memberInserts);
+
+      if (membersError) {
+        console.error("Error inserting members:", membersError);
+        alert("Error adding members to bill");
+        return;
+      }
+    }
+  }
+
+  loadBills();
+  setShowAddModal(false);
+  resetForm();
 };
+
+    const getBillEntries = () => {
+        const now = new Date();
+        const currentMonth = now.getMonth()
+        const currentYear = now.getFullYear()
+
+        const entries = bills.filter(bill => {
+            const d = new Date(bill.created_at);
+            return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        }).length;
+
+        return entries;
+    }
+
+    console.log(BILL_ADD_LIMIT)
+    // console.log(userRole)
+    console.log(getBillEntries())
+
 
     const loadBills = async () => {
         const { data, error } = await supabase
@@ -208,31 +262,42 @@ const router = useRouter();
     }
 
     const handleAddGuestSubmit = () => {
-        if (!guestFirst || !guestEmail) {
-            alert("First name and Email are required");
-            return;
-        }
-        const newGuest = {
-            id: guestEmail,
-            name: `${guestFirst} ${guestLast}`.trim(),
-            email: guestEmail,
-            uniqueKey: `g-${guestEmail}-${Date.now()}`
-        };
-        setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
-        setGuestFirst(""); setGuestLast(""); setGuestEmail("");
-        setShowAddGuestModal(false);
-        setShowSelectPeopleModal(true);
-    };
+  if (!guestFirst || !guestEmail) {
+    alert("First name and Email are required");
+    return;
+  }
+  
+  const newGuest = {
+    id: guestEmail, // Using email as temporary ID
+    name: `${guestFirst} ${guestLast}`.trim(),
+    first_name: guestFirst,
+    last_name: guestLast || '',
+    email: guestEmail,
+    type: 'guest', // Explicitly set type
+    uniqueKey: `g-${Date.now()}-${Math.random()}`
+  };
+  
+  setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
+  setGuestFirst(""); 
+  setGuestLast(""); 
+  setGuestEmail("");
+  setShowAddGuestModal(false);
+  setShowSelectPeopleModal(true);
+};
 
     useEffect(() => { loadBills(); }, []);
-
-     const getDisplayName = (person) => {
-        if (person.type === 'registered') {
-            return person.nickname || person.name || 'Unknown User';
-        } else {
-            return person.name || person.first_name || 'Unknown Guest';
-        }
-        };
+const getDisplayName = (person) => {
+  if (!person) return 'Unknown';
+  
+  if (person.type === 'registered') {
+    return person.nickname || person.name || 'Unknown User';
+  } else if (person.type === 'guest') {
+    return person.name || `${person.first_name || ''} ${person.last_name || ''}`.trim() || 'Unknown Guest';
+  }
+  
+  // Fallback for other cases
+  return person.name || 'Unknown';
+};
 
     // --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
     const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress }) => {
@@ -450,6 +515,7 @@ const router = useRouter();
             <Pressable style={styles.addButton} onPress={() => setShowAddModal(true)}>
             <Ionicons name="add" size={22} color="#fff" />
             <ThemedText style={styles.addButtonText}>New Bill</ThemedText>
+
             </Pressable>
         </View>
 
