@@ -16,10 +16,13 @@ const router = useRouter();
     const [billName, setBillName] = useState("");
     const [inviteCode, setInviteCode] = useState(generateInviteCode());
     const [showAddGuestModal, setShowAddGuestModal] = useState(false);
+    const [userRole, setUserRole] = useState('')
 
     const [guestFirst, setGuestFirst] = useState("");
     const [guestLast, setGuestLast] = useState("");
     const [guestEmail, setGuestEmail] = useState("");
+
+    const BILL_ADD_LIMIT = 5;
 
     const [errors, setErrors] = useState({});
 
@@ -300,7 +303,7 @@ const getDisplayName = (person) => {
 };
 
     // --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
-    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress }) => {
+     const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress }) => {
         const [loading, setLoading] = useState(true);
         const [allPotentialUsers, setAllPotentialUsers] = useState([]); // Master list
         const [displayUsers, setDisplayUsers] = useState([]); // Filtered list
@@ -312,50 +315,60 @@ const getDisplayName = (person) => {
 
         useEffect(() => {
         if (visible) {
-            loadUsersFromSupabase();
-            setLocalSelection(currentSelection); // Sync selection when opening
+            loadUsersFromSupabase("all");
+            setLocalSelection(currentSelection);
         }
         }, [visible]);
 
-        const loadUsersFromSupabase = async () => {
-  setLoading(true);
-  try {
-    // 1. Fetch Registered Users from clerk_users
-    const { data: registeredData } = await supabase
-      .from('clerk_users')
-      .select('clerk_user_id, nickname');
-    
-    const formattedRegistered = (registeredData || []).map(u => ({
-      id: u.clerk_user_id,
-      name: u.nickname || 'Unknown User',
-      uniqueKey: `r-${u.clerk_user_id}`
-    }));
+        const loadUsersFromSupabase = async (currentFilter = "all") => {
+        setLoading(true);
 
-    console.log(formattedRegistered)
+        try {
+            let users = [];
 
-    // 2. Fetch Guests from separate guests table
-    const { data: guestsData } = await supabase
-      .from('guest_users') // Assuming you have a 'guests' table
-      .select('id, first_name, last_name, email')
+            // REGISTERED USERS
+            if (currentFilter === "all" || currentFilter === "registered") {
+            const { data: registeredData } = await supabase
+                .from("clerk_users")
+                .select("clerk_user_id, nickname");
 
-    const formattedGuests = (guestsData || []).map(g => ({
-      first_name: g.first_name,
-      last_name: g.last_name,
-      email: g.email,
-      uniqueKey: `g-${g.id}`
-    }));
+            const formattedRegistered = (registeredData || []).map(u => ({
+                id: u.clerk_user_id,
+                name: u.nickname || "Unknown User",
+                type: "registered",
+                uniqueKey: `r-${u.clerk_user_id}`
+            }));
 
-    const combined = [...formattedRegistered, ...formattedGuests];
-    setAllPotentialUsers(combined);
-    applyFilters(combined, searchQuery, filter);
-  } catch (e) {
-    console.error('Error loading users:', e);
-  } finally {
-    setLoading(false);
-  }
-};
+            users = [...users, ...formattedRegistered];
+            }
 
-        const applyFilters = (users, query, currentFilter) => {
+            // GUEST USERS
+            if (currentFilter === "all" || currentFilter === "guest") {
+            const { data: guestsData } = await supabase
+                .from("guest_users")
+                .select("id, first_name, last_name, email");
+
+            const formattedGuests = (guestsData || []).map(g => ({
+                id: g.id,
+                name: `${g.first_name} ${g.last_name}`,
+                type: "guest",
+                uniqueKey: `g-${g.id}`
+            }));
+
+            users = [...users, ...formattedGuests];
+            }
+
+            setAllPotentialUsers(users);
+            applyFilters(users, searchQuery, currentFilter);
+
+        } catch (error) {
+            console.error("Error loading users:", error);
+        } finally {
+            setLoading(false);
+        }
+        };
+
+    const applyFilters = (users, query, currentFilter) => {
         let filtered = users;
         // Filter by type
         if (currentFilter !== 'all') {
@@ -379,12 +392,15 @@ const getDisplayName = (person) => {
 
         // Cycle through filters (All -> Registered -> Guests -> All)
         const toggleFilter = () => {
-        let nextFilter;
-        if (filter === 'all') nextFilter = 'registered';
-        else if (filter === 'registered') nextFilter = 'guest';
-        else nextFilter = 'all';
+        let nextFilter = "all";
+
+        if (filter === "all") nextFilter = "registered";
+        else if (filter === "registered") nextFilter = "guest";
+        else nextFilter = "all";
+
         setFilter(nextFilter);
-        applyFilters(allPotentialUsers, searchQuery, nextFilter);
+
+        loadUsersFromSupabase(nextFilter);
         };
 
         const toggleSelection = (user) => {
@@ -397,6 +413,12 @@ const getDisplayName = (person) => {
         };
 
         const handleConfirm = () => {
+
+        if(validator.equals(userRole, 'Standard') && localSelection.length > 3 || selectedInvolvedPeople.length > 3) {
+            alert('You have reached the maximum people to be involved with, MAX: 3');
+            return;
+        }
+
         onConfirm(localSelection); // Pass local choices up to parent
         onClose();
         };
@@ -435,8 +457,11 @@ const getDisplayName = (person) => {
                 
                 <FilterBadge />
 
-                <Pressable style={styles.wireframeIconBtn} onPress={loadUsersFromSupabase}>
-                    <Ionicons name="refresh" size={18} color="#333" />
+                <Pressable
+                style={styles.wireframeIconBtn}
+                onPress={() => loadUsersFromSupabase(filter)}
+                >
+                <Ionicons name="refresh" size={18} color="#333" />
                 </Pressable>
                 
                 <Pressable style={styles.wireframeAddGuestBtn} onPress={onAddGuestPress}>

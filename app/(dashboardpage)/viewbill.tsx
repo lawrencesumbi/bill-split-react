@@ -631,7 +631,7 @@ export default function ViewBill() {
                 styles.addPersonBtn,
                 billStatus === "archived" && { opacity: 0.4 }
               ]}
-              onPress={() => setShowGuestModal(true)}
+              onPress={() => setShowSelectPeopleModal(true)}
               disabled={billStatus === "archived"}
             >
               <Ionicons name="person-add" size={16} color="tomato" />
