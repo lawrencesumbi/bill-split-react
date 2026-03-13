@@ -1,4 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
+import { supabase } from '@/utils/supabase';
 import { SignedIn, SignedOut, useUser } from '@clerk/clerk-expo';
 import { Link, useRouter } from 'expo-router';
 import * as React from 'react';
@@ -13,27 +14,93 @@ import {
   TextInput,
   View
 } from 'react-native';
+import validator from 'validator';
 
 export default function Page() {
   const router = useRouter();
   const { user } = useUser();
   const [modalVisible, setModalVisible] = React.useState(false);
   const [modalStep, setModalStep] = React.useState(1); // 1: Code, 2: Email, 3: Register Guest
-  
+  const [bill, setBill] = React.useState([])
+  const [billMembers, setBillMembers] = React.useState([])
+  const [isFound, setIsFound] = React.useState(false)
   // Form States
   const [inviteCode, setInviteCode] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
 
-  const handleInviteSubmit = () => {
-    if (inviteCode.trim().length > 0) setModalStep(2);
+  const handleInviteSubmit = async() => {
+
+    try { 
+      const { data, error } = await supabase
+      .from("bills")
+      .select("*")
+      .eq('invite_code', inviteCode)
+
+      const fetchedBill = data[0]
+      
+          if(validator.equals(fetchedBill?.status, 'archived')) {
+            alert("You can't access an archived bill.");
+            return;
+          }
+
+
+          if (validator.equals(fetchedBill?.invite_code, inviteCode)) {
+            setBill(fetchedBill)
+            setModalStep(2);
+          }
+    } catch (err) {
+      console.log(err)
+    }
+
+    console.log("bill: ", bill)
+
   };
 
-  const handleEmailSubmit = () => {
+  // console.log(bill)
+
+  const handleEmailSubmit = async () => {
     // Logic to check if email exists would go here
     // If not exists, move to step 3
-    setModalStep(3);
+
+    if(!validator.isEmail(email)) {
+      alert('incorrect email format.');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+      .from('bill_members')
+      .select(`*,
+        guest_users:guest_id (
+        email
+        )`)
+      .eq('bill_id', bill.id)
+
+      let fetchedBillMembers = data
+
+      fetchedBillMembers?.map(bm => {
+        if(validator.equals(email, bm.guest_users.email)) {
+            alert('success')
+              router.push({
+                pathname: '/guest-view',
+                params: { billId: bill.id, inviteCode: bill.invite_code} 
+              })
+              setModalVisible(false)
+              setIsFound(true)
+              return;
+          }
+        })     
+        fetchedBillMembers = null
+      } catch (err) {
+        console.log(err)
+      }
+      
+      if(!isFound) {
+        alert('Email not found.');
+        setModalStep(3)
+      }
   };
 
 const handleRegisterGuest = () => {
@@ -149,8 +216,8 @@ const handleRegisterGuest = () => {
 
               {modalStep === 2 && (
                 <>
-                  <ThemedText style={styles.codeIndicator}>You have entered the code: {inviteCode}</ThemedText>
-                  <ThemedText style={styles.billNameText}>Friday Night Pizza 🍕</ThemedText>
+                  <ThemedText style={styles.codeIndicator}>You have entered the code: {bill?.invite_code}</ThemedText>
+                  <ThemedText style={styles.billNameText}>{bill.name}</ThemedText>
                   
                   <View style={styles.formGroup}>
                     <ThemedText style={styles.inputLabel}>Enter email address:</ThemedText>

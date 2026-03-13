@@ -6,12 +6,14 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 export default function GuestBillView() {
-  const { inviteCode } = useLocalSearchParams();
+  const { inviteCode, billId } = useLocalSearchParams();
   const router = useRouter();
 
   const [bill, setBill] = useState(null);
   const [expenses, setExpenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  console.log(billId)
 
   useEffect(() => {
     fetchGuestBillData();
@@ -20,6 +22,8 @@ export default function GuestBillView() {
   const fetchGuestBillData = async () => {
     if (!inviteCode) return;
 
+    setLoading(true)
+    
     try {
       const { data: billData } = await supabase
         .from('bills')
@@ -36,6 +40,7 @@ export default function GuestBillView() {
           .order('created_at', { ascending: false });
 
         setExpenses(expData || []);
+        setLoading(false)
       }
     } catch (error) {
       console.error("Error fetching guest data:", error);
