@@ -4,7 +4,7 @@ import { useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 
 
@@ -15,17 +15,18 @@ export default function ViewBill() {
   const router = useRouter();
   const { user } = useUser();
   const { billId, billName } = useLocalSearchParams();
-  
   const [guests, setGuests] = useState<Guest[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [splitType, setSplitType] = useState('equal')
   const [involved, setInvolved] = useState([]);
   
   // Modal Visibility States
+  const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([])
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showCustomModal, setShowCustomModal] = useState(false); // For Custom Split
   const [showPaidByDropdown, setShowPaidByDropdown] = useState(false);
+  const [showSelectPeopleModal, setShowSelectPeopleModal] = useState(false);
   
   // Form states
   const [guestFirstName, setGuestFirstName] = useState('');
@@ -51,6 +52,12 @@ export default function ViewBill() {
     if(!error) setExpPaidBy(data.nickname);
   }
 
+  const openGuestModal = () => {
+    setShowSelectPeopleModal(false);
+    setShowGuestModal(true)
+  }
+
+  console.log("involved: ", involved)
   
   // Custom Split states: stores { guestId: amountString }
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
@@ -67,7 +74,7 @@ export default function ViewBill() {
 
        const getDisplayName = (person) => {
         if (person.clerk_users !== null) {
-            return person.clerk_users.nickname || person.name || 'Unknown User';
+            return person.clerk_users?.nickname || person.name || 'Unknown User';
         } else {
             return person.name || person.guest_users.first_name || 'Unknown Guest';
         }
@@ -89,7 +96,7 @@ export default function ViewBill() {
     if(!error) setInvolved(data);
   }
 
-
+  
   
   React.useEffect(() => { loadInvolved(); }, []);
 
@@ -228,12 +235,313 @@ export default function ViewBill() {
     setCustomAmounts(prev => ({ ...prev, [id]: value }));
   };
 
-  console.log(selectedInvolved)
+  console.log("selected involved poeple", selectedInvolvedPeople)
 
   // Helper to calculate remaining for Custom Modal
   const totalAllocated = Object.values(customAmounts).reduce((acc, val) => acc + (parseFloat(val) || 0), 0);
   const remaining = parseFloat(expCost || '0') - totalAllocated;
 
+// --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
+    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress, billId, loadInvolved }) => {
+        const [loading, setLoading] = useState(true);
+        const [allPotentialUsers, setAllPotentialUsers] = useState([]); // Master list
+        const [displayUsers, setDisplayUsers] = useState([]); // Filtered list
+        const [searchQuery, setSearchQuery] = useState("");
+        const [filter, setFilter] = useState('all'); // all, registered, guest
+        
+        // Tracks selections within this modal session before confirmation
+        const [localSelection, setLocalSelection] = useState(currentSelection);
+
+        useEffect(() => {
+        if (visible) {
+            console.log("visible true")
+            loadUsersFromSupabase("all");
+            setLocalSelection(currentSelection);
+        }
+        }, [visible]);
+
+        console.log("local selection:", localSelection, visible)
+
+        const loadUsersFromSupabase = async (currentFilter = "all") => {
+        setLoading(true);
+
+        try {
+            let users = [];
+
+            // REGISTERED USERS
+            if (currentFilter === "all" || currentFilter === "registered") {
+            const { data: registeredData } = await supabase
+                .from("clerk_users")
+                .select("clerk_user_id, nickname");
+
+            const formattedRegistered = (registeredData || []).map(u => ({
+                id: u.clerk_user_id,
+                name: u.nickname || "Unknown User",
+                type: "registered",
+                uniqueKey: `r-${u.clerk_user_id}`
+            }));
+
+            users = [...users, ...formattedRegistered];
+            }
+
+            // GUEST USERS
+            if (currentFilter === "all" || currentFilter === "guest") {
+            const { data: guestsData } = await supabase
+                .from("guest_users")
+                .select("id, first_name, last_name, email");
+
+            const formattedGuests = (guestsData || []).map(g => ({
+                id: g.id,
+                name: `${g.first_name} ${g.last_name}`,
+                type: "guest",
+                uniqueKey: `g-${g.id}`
+            }));
+
+            users = [...users, ...formattedGuests];
+            }
+
+            setAllPotentialUsers(users);
+            applyFilters(users, searchQuery, currentFilter);
+
+        } catch (error) {
+            console.error("Error loading users:", error);
+        } finally {
+            setLoading(false);
+        }
+        };
+
+    const applyFilters = (users, query, currentFilter) => {
+        let filtered = users;
+        // Filter by type
+        if (currentFilter !== 'all') {
+            filtered = filtered.filter(u => u.type === currentFilter);
+        }
+        // Filter by search query
+        if (query) {
+            filtered = filtered.filter(u => 
+            u.name.toLowerCase().includes(query.toLowerCase()) ||
+            (u.email && u.email.toLowerCase().includes(query.toLowerCase()))
+            );
+        }
+
+        console.log("filtered: ", filtered)
+
+        if(involved) {
+          // Filter clerk users
+            involved.map(i => {
+              filtered = filtered.filter(u =>
+                u.id != i.user_id
+              )
+              console.log("involved: ", i)
+          });
+
+          // Filter guests
+          involved.map(i => {
+            filtered = filtered.filter(u =>
+              u.id != i.guest_id
+            )
+          });
+        }
+        
+        setDisplayUsers(filtered);
+      };
+      
+        // Handle Search input change
+        const handleSearch = (query) => {
+        setSearchQuery(query);
+        applyFilters(allPotentialUsers, query, filter);
+        };
+
+        // Cycle through filters (All -> Registered -> Guests -> All)
+        const toggleFilter = () => {
+        let nextFilter = "all";
+
+        if (filter === "all") nextFilter = "registered";
+        else if (filter === "registered") nextFilter = "guest";
+        else nextFilter = "all";
+
+        setFilter(nextFilter);
+
+        loadUsersFromSupabase(nextFilter);
+        };
+
+        const toggleSelection = (user) => {
+        const isSelected = localSelection.some(u => u.uniqueKey === user.uniqueKey);
+        if (isSelected) {
+            setLocalSelection(localSelection.filter(u => u.uniqueKey !== user.uniqueKey));
+        } else {
+            setLocalSelection([...localSelection, user]);
+        }
+        };
+
+        const handleConfirm = () => {
+        onConfirm(localSelection); // Pass local choices up to parent
+        insertSelectedPeople(localSelection);
+        onClose();
+        };
+
+        const FilterBadge = () => {
+        let label = 'All';
+        let icon = 'people';
+        if (filter === 'registered') { label = 'Reg'; icon = 'at-circle'; }
+        if (filter === 'guest') { label = 'Guest'; icon = 'happy'; }
+        return (
+            <Pressable style={styles.wireframeFilterBtn} onPress={toggleFilter}>
+            <Ionicons name={icon} size={16} color="#333" />
+            <ThemedText style={styles.filterBtnText}>{label}</ThemedText>
+            </Pressable>
+        );
+        };
+
+        const insertSelectedPeople = async (peopleToInsert) => {
+  if (peopleToInsert.length === 0) return;
+
+  const memberInserts = [];
+
+  for (const person of peopleToInsert) {
+    // Check if this is a registered user
+    const isRegisteredUser = 
+      person.type === 'registered' || 
+      (person.uniqueKey && person.uniqueKey.startsWith('r-'));
+
+    if (isRegisteredUser) {
+      // REGISTERED USER
+      memberInserts.push({
+        bill_id: billId,
+        user_id: person.id,
+        guest_id: null
+      });
+    } else {
+      // GUEST USER - extract ID from uniqueKey
+      let guestId;
+      
+      if (person.uniqueKey && person.uniqueKey.startsWith('g-')) {
+        guestId = person.uniqueKey.replace('g-', '');
+      } else {
+        guestId = person.id;
+      }
+
+      memberInserts.push({
+        bill_id: billId,
+        user_id: null,
+        guest_id: guestId
+      });
+    }
+  }
+
+  // Insert all selected members
+  if (memberInserts.length > 0) {
+    const { error: membersError } = await supabase
+      .from("bill_members")
+      .insert(memberInserts);
+
+    if (membersError) {
+      console.error("Error inserting members:", membersError);
+      alert("Error adding members to bill");
+      return;
+    }
+  }
+
+  // Refresh the involved people list
+  if (typeof loadInvolved === 'function') {
+    loadInvolved();
+  }
+};
+        
+
+        return (
+        <Modal visible={visible} transparent animationType="slide">
+            <View style={styles.modalOverlay}>
+            <View style={styles.wireframeSelectPeopleBox}>
+                {/* Top Row: Controls (Based on Wireframe) */}
+                <View style={styles.wireframeControlsRow}>
+                <View style={styles.wireframeSearchWrapper}>
+                    <Ionicons name="search" size={18} color="#AEAEB2" />
+                    <TextInput
+                    style={styles.wireframeSearchInput}
+                    placeholder="Search registered or guest users..."
+                    placeholderTextColor="#C7C7CC"
+                    value={searchQuery}
+                    onChangeText={handleSearch}
+                    />
+                </View>
+                
+                <FilterBadge />
+
+                <Pressable
+                style={styles.wireframeIconBtn}
+                onPress={() => loadUsersFromSupabase(filter)}
+                >
+                <Ionicons name="refresh" size={18} color="#333" />
+                </Pressable>
+                
+                <Pressable style={styles.wireframeAddGuestBtn} onPress={onAddGuestPress}>
+                    <ThemedText style={styles.addGuestBtnText}>Add guest</ThemedText>
+                </Pressable>
+                </View>
+
+                {/* Center: Scrollable List Area */}
+                <View style={styles.wireframeListArea}>
+                {loading ? (
+                    <View style={styles.listCenterContent}><ActivityIndicator color="tomato" /></View>
+                ) : displayUsers.length === 0 ? (
+                    <View style={styles.listCenterContent}>
+                    <Ionicons name="search-outline" size={48} color="#CCC" />
+                    <ThemedText style={styles.placeholderText}>No users found</ThemedText>
+                    </View>
+                ) : (
+                    <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true} contentContainerStyle={{paddingBottom: 10}}>
+                    {displayUsers.filter(d => d.id !== user.id).map((userItem) => {
+                        const isSelected = localSelection.some(u => u.uniqueKey === userItem.uniqueKey);
+                        return (
+                        <Pressable 
+                            key={userItem.uniqueKey} 
+                            style={[styles.wireframeUserRow, isSelected && styles.userRowSelected]} 
+                            onPress={() => toggleSelection(userItem)}
+                        >
+                            <Ionicons 
+                            name={userItem.type === 'registered' ? "at-circle" : "person-circle"} 
+                            size={28} 
+                            color={isSelected ? "tomato" : "#AEAEB2"} 
+                            />
+                            <View key={userItem.uniqueKey || userItem.id} style={styles.userInfo}>
+                            <ThemedText style={[styles.userNameText, isSelected && styles.textSelected]}>
+                              {console.log("User Item: ", userItem)}
+                                {getDisplayName(userItem)}
+                            </ThemedText>
+                            {userItem.type === 'guest' && <ThemedText style={styles.userSubtext}>{userItem.email}</ThemedText>}
+                            </View>
+                            <Ionicons 
+                            name={isSelected ? "checkbox" : "square-outline"} 
+                            size={24} 
+                            color={isSelected ? "tomato" : "#C7C7CC"} 
+                            />
+                        </Pressable>
+                        );
+                    })}
+                    </ScrollView>
+                )}
+                </View>
+
+                {/* Bottom: Action Buttons */}
+                <View style={styles.wireframeFooterRow}>
+                <Pressable style={styles.wireframeCancelBtn} onPress={onClose}>
+                    <ThemedText style={styles.cancelBtnText}>Cancel</ThemedText>
+                </Pressable>
+                <Pressable style={styles.wireframeConfirmBtn} onPress={handleConfirm}>
+                    <ThemedText style={styles.confirmBtnText}>
+                    Add People ({localSelection.length})
+                    </ThemedText>
+                </Pressable>
+                </View>
+            </View>
+            </View>
+        </Modal>
+        );
+    };
+
+  
+  
   return (
     <View style={styles.container}>
       {/* ... (Previous Header, Search, and Lists remain exactly the same) ... */}
@@ -283,7 +591,7 @@ export default function ViewBill() {
         <View style={styles.rightColumn}>
           <View style={styles.peopleHeader}>
             <ThemedText style={styles.columnTitle}>Involved people</ThemedText>
-            <Pressable style={styles.addPersonBtn} onPress={() => setShowGuestModal(true)}><Ionicons name="person-add" size={16} color="tomato" /></Pressable>
+            <Pressable style={styles.addPersonBtn} onPress={() => setShowSelectPeopleModal(true)}><Ionicons name="person-add" size={16} color="tomato" /></Pressable>
           </View>
           <ScrollView>
             {involved.filter(i => i.user_id !== user?.id).map(involve => (
@@ -457,6 +765,15 @@ export default function ViewBill() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+              <SelectPeopleModal 
+            visible={showSelectPeopleModal} 
+            onClose={() => setShowSelectPeopleModal(false)}
+            onConfirm={(people) => setSelectedInvolvedPeople(people)}
+            currentSelection={selectedInvolvedPeople}
+            onAddGuestPress={openGuestModal}
+            billId={billId}
+            loadInvolved={loadInvolved}
+        />
     </View>
   );
 }
@@ -548,5 +865,93 @@ const styles = StyleSheet.create({
   },
   toggleBtnTextActive: {
     color: 'tomato', // Matches your checkbox color
-  }
+  },
+   wireframeFilterBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        height: 40,
+        borderWidth: 1, borderColor: '#E5E5EA',
+        borderRadius: 10,
+        marginRight: 8
+    },
+    filterBtnText: { fontSize: 13, color: '#333', fontWeight: '600', marginLeft: 4 },
+    wireframeIconBtn: {
+        width: 40, height: 40, justifyContent: 'center', alignItems: 'center',
+        borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 10, marginRight: 8
+    },
+    wireframeAddGuestBtn: {
+        paddingHorizontal: 12, height: 40, justifyContent: 'center', alignItems: 'center',
+        backgroundColor: '#333', borderRadius: 10
+    },
+    addGuestBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+    
+    wireframeListArea: {
+        height: 350,
+        borderWidth: 1, borderColor: '#E5E5EA',
+        borderRadius: 12,
+        marginBottom: 16,
+        overflow: 'hidden'
+    },
+    listCenterContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    placeholderText: { fontSize: 14, color: '#AEAEB2', marginTop: 10 },
+    
+    wireframeUserRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1, borderBottomColor: '#F2F2F7'
+    },
+    userRowSelected: { backgroundColor: '#FFF5F3' },
+    userInfo: { flex: 1, paddingHorizontal: 12 },
+    userNameText: { fontSize: 16, fontWeight: '600', color: '#1C1C1E' },
+    textSelected: { color: 'tomato' },
+    userSubtext: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
+    
+    wireframeFooterRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 12
+    },
+    wireframeCancelBtn: {
+        flex: 1, height: 48, justifyContent: 'center', alignItems: 'center',
+        borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 12
+    },
+    cancelBtnText: { fontSize: 16, color: '#8E8E93', fontWeight: '600' },
+    wireframeConfirmBtn: {
+        flex: 2, height: 48, justifyContent: 'center', alignItems: 'center',
+        backgroundColor: 'tomato', borderRadius: 12
+    },
+    confirmBtnText: { fontSize: 16, color: '#fff', fontWeight: '700' },
+     wireframeSelectPeopleBox: {
+        width: '95%',
+        maxWidth: 600,
+        backgroundColor: '#fff',
+        borderRadius: 24,
+        padding: 16, // tighter padding like wireframe
+        shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 15,
+    },
+    wireframeControlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+        borderBottomWidth: 1, borderBottomColor: '#F2F2F7', paddingBottom: 12
+    },
+    wireframeSearchWrapper: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 40,
+        backgroundColor: '#F2F2F7',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        marginRight: 10
+    },
+    wireframeSearchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: '#1C1C1E',
+        marginLeft: 8
+    },
 });
