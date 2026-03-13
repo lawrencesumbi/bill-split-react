@@ -24,6 +24,8 @@ export default function Page() {
   const [bill, setBill] = React.useState([])
   const [billMembers, setBillMembers] = React.useState([])
   const [isFound, setIsFound] = React.useState(false)
+  const [archivedModalVisible, setArchivedModalVisible] = React.useState(false);
+  
   // Form States
   const [inviteCode, setInviteCode] = React.useState('');
   const [email, setEmail] = React.useState('');
@@ -40,10 +42,14 @@ export default function Page() {
 
       const fetchedBill = data[0]
       
-          if(validator.equals(fetchedBill?.status, 'archived')) {
-            alert("You can't access an archived bill.");
-            return;
-          }
+      if (validator.equals(fetchedBill?.status, 'archived')) {
+  // Close the invite code modal
+  setModalVisible(false);
+
+  // Show the archived modal
+  setArchivedModalVisible(true);
+  return;
+}
 
 
           if (validator.equals(fetchedBill?.invite_code, inviteCode)) {
@@ -177,6 +183,29 @@ const handleRegisterGuest = () => {
           </SignedIn>
         </View>
       </View>
+  
+  <Modal
+  animationType="slide"
+  transparent={true}
+  visible={archivedModalVisible}
+  onRequestClose={() => setArchivedModalVisible(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContent}>
+      <View style={styles.modalHandle} />
+      <ThemedText style={styles.modalTitle}>Archived Bill</ThemedText>
+      <ThemedText style={styles.modalSubtitle}>
+        You can't access an archived bill.
+      </ThemedText>
+      <Pressable
+        style={styles.primaryButtonLarge}
+        onPress={() => setArchivedModalVisible(false)}
+      >
+        <ThemedText style={styles.primaryButtonText}>Close</ThemedText>
+      </Pressable>
+    </View>
+  </View>
+</Modal> 
 
       <Modal
         animationType="slide"
@@ -316,6 +345,7 @@ const styles = StyleSheet.create({
   welcomeBack: { color: '#fff', fontSize: 16, textAlign: 'center', marginBottom: 15, fontWeight: '600' },
   inviteLinkContainer: { marginTop: 25, alignItems: 'center' },
   inviteLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, textDecorationLine: 'underline' },
+  
 
   /* --- MODAL CORE STYLES --- */
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
