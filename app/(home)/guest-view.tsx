@@ -3,7 +3,18 @@ import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
 export default function GuestBillView() {
   const { inviteCode, billId } = useLocalSearchParams();
@@ -11,8 +22,14 @@ export default function GuestBillView() {
 
   const [bill, setBill] = useState(null);
   const [expenses, setExpenses] = useState([]);
-  const [involved, setInvolved] = useState([]); // New state for members
+  const [involved, setInvolved] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal & Password States
+  const [showSignUpModal, setShowSignUpModal] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   useEffect(() => {
     fetchGuestBillData();
@@ -20,11 +37,8 @@ export default function GuestBillView() {
 
   const fetchGuestBillData = async () => {
     if (!inviteCode) return;
-
-    setLoading(true)
-    
+    setLoading(true);
     try {
-      // 1. Fetch the Bill
       const { data: billData } = await supabase
         .from('bills')
         .select('*')
@@ -33,8 +47,6 @@ export default function GuestBillView() {
 
       if (billData) {
         setBill(billData);
-
-        // 2. Fetch Expenses
         const { data: expData } = await supabase
           .from('expenses')
           .select(`*`)
@@ -42,7 +54,6 @@ export default function GuestBillView() {
           .order('created_at', { ascending: false });
         setExpenses(expData || []);
 
-        // 3. Fetch Involved Members (Clerk Users & Guests)
         const { data: membersData } = await supabase
           .from('bill_members')
           .select(`
@@ -60,7 +71,6 @@ export default function GuestBillView() {
     }
   };
 
-  // Helper to format names based on user type
   const getDisplayName = (member) => {
     if (member.clerk_users?.nickname) return member.clerk_users.nickname;
     if (member.guest_users) {
@@ -101,8 +111,6 @@ export default function GuestBillView() {
 
       {/* MAIN CONTENT AREA */}
       <View style={styles.mainContent}>
-        
-        {/* LEFT COLUMN: TOTAL & LIST */}
         <View style={styles.leftColumn}>
           <View style={styles.heroCard}>
             <View>
@@ -139,7 +147,6 @@ export default function GuestBillView() {
           </ScrollView>
         </View>
 
-        {/* RIGHT COLUMN: INVOLVED PEOPLE (Hidden on Mobile/Android per original logic) */}
         {Platform.OS !== 'android' && (
           <View style={styles.rightColumn}>
             <View style={styles.peopleHeader}>
@@ -164,7 +171,7 @@ export default function GuestBillView() {
                   {member.clerk_users ? (
                     <Ionicons name="checkmark-circle" size={16} color="#34C759" />
                   ) : (
-                     <View style={styles.guestBadge}><ThemedText style={styles.guestBadgeText}>Guest</ThemedText></View>
+                    <View style={styles.guestBadge}><ThemedText style={styles.guestBadgeText}>Guest</ThemedText></View>
                   )}
                 </View>
               ))}
@@ -172,7 +179,7 @@ export default function GuestBillView() {
             
             <View style={styles.spacer} />
 
-            <Pressable style={styles.modernSubmitBtn} onPress={() => router.replace('/(auth)/sign-up')}>
+            <Pressable style={styles.modernSubmitBtn} onPress={() => setShowSignUpModal(true)}>
               <ThemedText style={styles.submitBtnText}>Sign Up</ThemedText>
             </Pressable>
           </View>
@@ -182,11 +189,90 @@ export default function GuestBillView() {
       {/* MOBILE STICKY FOOTER */}
       {Platform.OS === 'android' && (
          <View style={styles.mobileFooter}>
-            <Pressable style={styles.modernSubmitBtn} onPress={() => router.replace('/(auth)/sign-up')}>
+            <Pressable style={styles.modernSubmitBtn} onPress={() => setShowSignUpModal(true)}>
               <ThemedText style={styles.submitBtnText}>Sign Up to Track Debts</ThemedText>
             </Pressable>
          </View>
       )}
+
+      {/* MODERN SIGN UP MODAL */}
+      <Modal
+        visible={showSignUpModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSignUpModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.modalContainer}
+          >
+            <View style={styles.modernModalCard}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <ThemedText style={styles.modalTitle}>Set Password</ThemedText>
+                  <ThemedText style={styles.modalSubtitle}>Secure your account to track debts</ThemedText>
+                </View>
+                <TouchableOpacity onPress={() => setShowSignUpModal(false)}>
+                  <Ionicons name="close-circle" size={28} color="#AEAEB2" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputSection}>
+                {/* PASSWORD FIELD */}
+                <ThemedText style={styles.fieldLabel}>Password</ThemedText>
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Create a password"
+                    placeholderTextColor="#AEAEB2"
+                    secureTextEntry={!isPasswordVisible}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  <TouchableOpacity onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                    <Ionicons 
+                      name={isPasswordVisible ? "eye-off" : "eye"} 
+                      size={20} 
+                      color="#8E8E93" 
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* CONFIRM PASSWORD FIELD */}
+                <ThemedText style={styles.fieldLabel}>Confirm Password</ThemedText>
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Repeat your password"
+                    placeholderTextColor="#AEAEB2"
+                    secureTextEntry={!isPasswordVisible}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                  />
+                  <TouchableOpacity onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                    <Ionicons 
+                      name={isPasswordVisible ? "eye-off" : "eye"} 
+                      size={20} 
+                      color="#8E8E93" 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={styles.modalActionBtn}
+                onPress={() => {
+                  // TODO: Add Supabase registration logic here
+                  setShowSignUpModal(false);
+                }}
+              >
+                <ThemedText style={styles.modalActionText}>Complete Account</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -221,7 +307,6 @@ const styles = StyleSheet.create({
   expPaidBy: { fontSize: 13, color: '#8E8E93', marginTop: 4 },
   emptyText: { textAlign: 'center', color: '#AEAEB2', marginTop: 40, fontSize: 16 },
   
-  // RIGHT COLUMN / PEOPLE LIST
   rightColumn: { flex: 1, backgroundColor: '#FFF', borderRadius: 24, padding: 25, maxHeight: 500, borderWidth: 1, borderColor: '#F2F2F7', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.03, shadowRadius: 10, elevation: 2 },
   peopleHeader: { alignItems: 'center', marginBottom: 20 },
   iconCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFF5F3', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
@@ -237,5 +322,19 @@ const styles = StyleSheet.create({
   spacer: { height: 20 },
   modernSubmitBtn: { backgroundColor: '#1C1C1E', padding: 18, borderRadius: 18, alignItems: 'center' },
   submitBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
-  mobileFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F2F2F7' }
+  mobileFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F2F2F7' },
+
+  // MODAL STYLES
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContainer: { width: '100%', maxWidth: 400 },
+  modernModalCard: { backgroundColor: '#FFF', borderRadius: 30, padding: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25 },
+  modalTitle: { fontSize: 24, fontWeight: '800', color: '#1C1C1E' },
+  modalSubtitle: { fontSize: 14, color: '#8E8E93', marginTop: 4 },
+  inputSection: { marginBottom: 25 },
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: '#1C1C1E', marginBottom: 8, textTransform: 'uppercase', marginLeft: 4 },
+  passwordInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7', borderRadius: 16, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E5EA' },
+  modalInput: { flex: 1, height: 55, fontSize: 16, color: '#1C1C1E' },
+  modalActionBtn: { backgroundColor: 'tomato', padding: 18, borderRadius: 18, alignItems: 'center', shadowColor: 'tomato', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  modalActionText: { color: '#FFF', fontWeight: '800', fontSize: 16 }
 });
