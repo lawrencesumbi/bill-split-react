@@ -165,15 +165,49 @@ const [validationMessage, setValidationMessage] = useState('');
     console.log(getBillEntries())
 
 
-    const loadBills = async () => {
-        const { data, error } = await supabase
+const loadBills = async () => {
+    if (!user?.id) return;
+    
+    // Query 1: Get bills created by the user
+    const { data: createdBills, error: error1 } = await supabase
         .from("bills")
         .select("*")
-        .eq("created_by", user?.id)
-        .eq("status", "active")
-        .order("created_at", { ascending: false });
-        if (!error) setBills(data);
-    };
+        .eq("created_by", user.id)
+        .eq("status", "active");
+    
+    // Query 2: Get bills where user is a member
+    const { data: memberBills, error: error2 } = await supabase
+        .from("bill_members")
+        .select(`
+            bill_id,
+            bills!inner(*)
+        `)
+        .eq("user_id", user.id)
+        .eq("bills.status", "active");
+    
+    if (error1 || error2) {
+        console.error("Error loading bills:", error1 || error2);
+        return;
+    }
+    
+    // Extract the bills from the member query
+    const memberBillsData = memberBills?.map(item => item.bills) || [];
+    
+    // Combine both sets of bills
+    const allBills = [...(createdBills || []), ...memberBillsData];
+    
+    // Remove duplicates based on bill id
+    const uniqueBills = Array.from(
+        new Map(allBills.map(bill => [bill.id, bill])).values()
+    );
+    
+    // Sort by created_at descending
+    uniqueBills.sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+    );
+    
+    setBills(uniqueBills);
+};
 
     const archiveBill = async (billId: number) => {
         const { error } = await supabase.from('bills').update({ status: 'archived'}).eq('id', billId);
@@ -579,14 +613,16 @@ const getDisplayName = (person) => {
                 <View style={styles.divider} />
                 <View style={styles.actionRow}>
                 <Pressable 
-  style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
-  onPress={() => router.push({
-    pathname: '/viewbill', // Ensure this matches your file structure
-    params: { billId: bill.id, billName: bill.name }
-  })}
->
-  <Ionicons name="create" size={18} color="#666" />
-</Pressable>
+                style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
+                onPress={() => router.push({
+                    pathname: '/viewbill', // Ensure this matches your file structure
+                    params: { billId: bill.id, billName: bill.name }
+                })}
+                >
+                <Ionicons name="create" size={18} color="#666" />
+                </Pressable>
+                {bill.created_by === user?.id && (
+                <>
                 <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" onPress={() => archiveBill(bill.id)} /></Pressable>
                 <Pressable
                     style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
@@ -594,6 +630,8 @@ const getDisplayName = (person) => {
                 >
                 <Ionicons name="trash" size={18} color="#FF3B30" />
                 </Pressable>
+                </>
+                )}
                 </View>
             </View>
             ))}

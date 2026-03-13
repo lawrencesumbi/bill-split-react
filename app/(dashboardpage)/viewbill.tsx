@@ -376,21 +376,90 @@ const handleSplitTypeChange = (type: string) => {
         }
         };
 
-  const loadInvolved = async () => {
-    const { data, error } = await supabase
+ const loadInvolved = async () => {
+  // First, get the bill details to know who the creator is
+  const { data: billData, error: billError } = await supabase
+    .from("bills")
+    .select("created_by, created_at")
+    .eq("id", billId)
+    .single();
+    
+  if (billError) {
+    console.error("Error loading bill:", billError);
+    return;
+  }
+  
+  // Get all bill members
+  const { data: membersData, error: membersError } = await supabase
     .from("bill_members")
-    .select(`*,
+    .select(`
+      *,
       clerk_users:user_id (
         nickname
       ),
       guest_users:guest_id (
-        first_name
+        first_name,
+        last_name,
+        email
       )
-      `)
+    `)
     .eq("bill_id", billId);
-
-    if(!error) setInvolved(data);
+    
+  if (membersError) {
+    console.error("Error loading members:", membersError);
+    return;
   }
+  
+  // Check if creator is already in the members list
+  const creatorInMembers = membersData?.some(member => member.user_id === billData.created_by);
+  
+  let allInvolved = [...(membersData || [])];
+  
+  // If creator is not in members, add them as a special entry
+  if (!creatorInMembers) {
+    // Get creator's details from clerk_users
+    const { data: creatorData, error: creatorError } = await supabase
+      .from("clerk_users")
+      .select("nickname")
+      .eq("clerk_user_id", billData.created_by)
+      .single();
+      
+    if (!creatorError && creatorData) {
+      // Create a synthetic member entry for the creator
+      const creatorEntry = {
+        id: `creator-${billData.created_by}`, // Synthetic ID
+        bill_id: billId,
+        user_id: billData.created_by,
+        guest_id: null,
+        created_at: billData.created_at || new Date().toISOString(),
+        clerk_users: {
+          nickname: creatorData.nickname || "Bill Creator"
+        },
+        guest_users: null,
+        is_creator: true // Custom flag to identify creator
+      };
+      
+      allInvolved = [creatorEntry, ...allInvolved];
+    }
+  } else {
+    // If creator is in members, mark them with is_creator flag
+    allInvolved = allInvolved.map(member => {
+      if (member.user_id === billData.created_by) {
+        return { ...member, is_creator: true };
+      }
+      return member;
+    });
+  }
+  
+  // Sort the list to show creators first, then by creation date
+  allInvolved.sort((a, b) => {
+    if (a.is_creator && !b.is_creator) return -1;
+    if (!a.is_creator && b.is_creator) return 1;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+  
+  setInvolved(allInvolved);
+};
 
   
   
@@ -983,39 +1052,45 @@ const handleSplitTypeChange = (type: string) => {
     </View>
   ) : (
     involved
-      .filter(i => i.user_id !== user?.id)
-      .map((person) => {
-        const name = getDisplayName(person);
+  .filter(i => i.user_id !== user?.id)
+  .map((person) => {
+    const name = getDisplayName(person);
+    const type = person.user_id !== null ? "Registered User" : "Guest";
 
-        const type =
-          person.user_id !== null ? "Registered User" : "Guest";
+    return (
+      <View key={person.id} style={styles.personCard}>
+        {/* Avatar */}
+        <View style={styles.avatarCircle}>
+          <Ionicons
+            name={person.user_id ? "at-circle" : "person"}
+            size={20}
+            color="tomato"
+          />
+        </View>
 
-        return (
-          <View key={person.id} style={styles.personCard}>
+        {/* Name + Type + Creator Badge */}
+        <View style={{ flex: 1 }}>
+          <View style={styles.nameRow}>
+            <ThemedText style={styles.personName}>
+              {name}
+            </ThemedText>
             
-            {/* Avatar */}
-            <View style={styles.avatarCircle}>
-              <Ionicons
-                name={person.user_id ? "at-circle" : "person"}
-                size={20}
-                color="tomato"
-              />
-            </View>
-
-            {/* Name + Type */}
-            <View style={{ flex: 1 }}>
-              <ThemedText style={styles.personName}>
-                {name}
-              </ThemedText>
-
-              <ThemedText style={styles.personType}>
-                {type}
-              </ThemedText>
-            </View>
-
+            {/* Creator Badge */}
+            {person.is_creator && (
+              <View style={styles.creatorBadge}>
+                <Ionicons name="crown" size={12} color="#FFD700" />
+                <ThemedText style={styles.creatorBadgeText}>Creator</ThemedText>
+              </View>
+            )}
           </View>
-        );
-      })
+
+          <ThemedText style={styles.personType}>
+            {type}
+          </ThemedText>
+        </View>
+      </View>
+    );
+  })
   )}
 </ScrollView>
         </View>
@@ -1395,6 +1470,29 @@ const styles = StyleSheet.create({
   iconPadding: {
     paddingLeft: 12, // Spaces the icons apart from each other
   },
+  // Add to your StyleSheet
+nameRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 2,
+},
+
+creatorBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#FFF5E6',
+  paddingHorizontal: 6,
+  paddingVertical: 2,
+  borderRadius: 4,
+  gap: 2,
+},
+
+creatorBadgeText: {
+  fontSize: 10,
+  fontWeight: '700',
+  color: '#B87C00',
+},
   container: { flex: 1, backgroundColor: '#F8F9FB', padding: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
   topTitleBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
   breadcrumb: { fontSize: 13, color: '#8E8E93' },
@@ -1617,7 +1715,7 @@ errorText: {
 },
 disabledBtn: {
   opacity: 0.5
-}
+},
 personCard: {
   flexDirection: 'row',
   alignItems: 'center',
