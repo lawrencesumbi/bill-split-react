@@ -19,6 +19,11 @@ export default function ViewBill() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [splitType, setSplitType] = useState('equal')
   const [involved, setInvolved] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+
+
+  const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   
   // Modal Visibility States
   const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([])
@@ -37,12 +42,27 @@ export default function ViewBill() {
   const [expCost, setExpCost] = useState('');
   const [expPaidBy, setExpPaidBy] = useState("");
   const [selectedInvolved, setSelectedInvolved] = useState<string[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [billStatus, setBillStatus] = useState('');
+
+  const [showViewExpenseModal, setShowViewExpenseModal] = useState(false);
+  const [viewingExpense, setViewingExpense] = useState<any>(null);
+  const [viewInvolved, setViewInvolved] = useState<any[]>([]);
 
   const currentUserId = user?.id;
 
   useEffect(() => { getNickname(currentUserId); }, [currentUserId]);
+
+  const totalExpense = expenses.reduce((sum, exp) => {
+  const cost = parseFloat(exp.cost || 0);
+  return sum + (isNaN(cost) ? 0 : cost);
+}, 0);
+
+   const filteredExpenses = expenses.filter(exp =>
+  exp.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  exp.paid_by?.toLowerCase().includes(searchQuery.toLowerCase())
+);
 
   const getNickname = async(id:string) => {
     const { data, error } = await supabase
@@ -58,6 +78,90 @@ export default function ViewBill() {
     setShowSelectPeopleModal(false);
     setShowGuestModal(true)
   }
+
+  const handleViewExpense = async (exp: any) => {
+    setViewingExpense(exp);
+
+    const { data, error } = await supabase
+      .from("expenses_involved")
+      .select(`
+        amount_spent,
+        bill_members (
+          id,
+          clerk_users:user_id (nickname),
+          guest_users:guest_id (first_name)
+        )
+      `)
+      .eq("expenses_id", exp.id);
+
+    if (!error && data) {
+      setViewInvolved(data);
+    }
+
+    setShowViewExpenseModal(true);
+  };
+
+  const handleEditExpense = async (exp: any) => {
+  setIsEditing(true);
+  setEditingExpenseId(exp.id);
+
+  setExpName(exp.name);
+  setExpCost(exp.cost.toString());
+  setExpPaidBy(exp.paid_by);
+
+  // fetch involved people
+  const { data, error } = await supabase
+    .from("expenses_involved")
+    .select("bill_member_id, amount_spent")
+    .eq("expenses_id", exp.id);
+
+  if (!error && data) {
+    // store selected ids
+    const selectedIds = data.map(i => i.bill_member_id);
+    setSelectedInvolved(selectedIds);
+    if(selectedInvolved.length >= 2) {
+      setSplitType('custom')
+    }
+
+    // store custom amounts
+    const amounts = {};
+    data.forEach(i => {
+      amounts[i.bill_member_id] = i.amount_spent.toString();
+    });
+
+    setCustomAmounts(amounts);
+  }
+
+  setShowExpenseModal(true);
+};
+
+  const handleUpdateExpense = async () => {
+  if (!editingExpenseId) return;
+
+  try {
+    const { error } = await supabase
+      .from("expenses")
+      .update({
+        name: expName,
+        cost: parseFloat(expCost),
+        paid_by: expPaidBy
+      })
+      .eq("id", editingExpenseId);
+
+    if (error) throw error;
+
+    Alert.alert("Success", "Expense updated");
+
+    setShowEditExpenseModal(false);
+    setEditingExpenseId(null);
+
+    fetchExpenses();
+
+  } catch (err) {
+    console.error(err);
+    Alert.alert("Error", "Failed to update expense");
+  }
+};
 
   console.log("involved: ", involved)
   
@@ -220,6 +324,20 @@ export default function ViewBill() {
       Alert.alert("Failed to add expense", "Please try again.");
     }
   };
+
+  const handleDelete = async (expenseId: string) => {
+    try {
+      const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', expenseId)
+
+      alert('success');
+      fetchExpenses()
+    } catch(err) {
+      console.error(err)
+    }
+  }
   
   const toggleInvolved = (id: string) => {
     setSelectedInvolved(prev => 
@@ -228,10 +346,10 @@ export default function ViewBill() {
   };
 
   useEffect(() => {
-    if(selectedInvolved.length < 3) {
+    if(selectedInvolved.length <= 2) {
       setSplitType('equal')
     }
-  })
+  }, [selectedInvolved]);
   console.log(splitType)
 
   const handleCustomAmountChange = (id: string, value: string) => {
@@ -555,14 +673,28 @@ export default function ViewBill() {
       <View style={styles.actionBar}>
         <View style={styles.searchSection}>
           <Pressable style={styles.glassBackBtn} onPress={() => router.back()}><Ionicons name="arrow-back" size={20} color="#1C1C1E" /></Pressable>
-          <View style={styles.searchContainer}><Ionicons name="search" size={18} color="#AEAEB2" /><TextInput style={styles.searchInput} placeholder="Search expenses..." /></View>
+                    <View style={styles.searchContainer}><Ionicons name="search" size={18} color="#AEAEB2" /><TextInput
+            style={styles.searchInput}
+            placeholder="Search expenses..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          /></View>
         </View>
         <Pressable
           style={[
             styles.modernAddBtn,
             billStatus === "archived" && { opacity: 0.5 }
           ]}
-          onPress={() => setShowExpenseModal(true)}
+          onPress={() => {
+               setIsEditing(false);
+
+              setExpName('');
+              setExpCost('');
+              setSelectedInvolved([]);
+              setCustomAmounts({});
+
+              setShowExpenseModal(true);
+            }}
           disabled={billStatus === "archived"}
         >
           <Ionicons name="add" size={20} color="#FFF" /><ThemedText style={styles.addBtnText}>Add Expense</ThemedText>
@@ -587,12 +719,23 @@ export default function ViewBill() {
 
       <View style={styles.mainContent}>
         <View style={styles.leftColumn}>
-            <View style={styles.columnHeader}>
-                <ThemedText style={styles.columnTitle}>Expenses</ThemedText>
-                <ThemedText style={styles.countText}>{expenses.length} Total</ThemedText>
-            </View>
+                  <View style={styles.columnHeader}>
+          <ThemedText style={styles.columnTitle}>Expenses</ThemedText>
+          <ThemedText style={styles.countText}>{expenses.length} Total</ThemedText>
+        </View>
+
+        <View style={styles.totalExpenseCard}>
+          <View>
+            <ThemedText style={styles.totalLabel}>Total Expense</ThemedText>
+            <ThemedText style={styles.totalAmount}>₱{totalExpense.toFixed(2)}</ThemedText>
+          </View>
+
+          <View style={styles.totalIcon}>
+            <Ionicons name="wallet" size={22} color="tomato" />
+          </View>
+        </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-             {expenses.map(exp => (
+             {filteredExpenses.map(exp => (
   <View key={exp.id} style={styles.modernExpenseCard}>
     <View style={styles.cardHeader}>
       <View style={{ flex: 1 }}>
@@ -606,13 +749,16 @@ export default function ViewBill() {
         <ThemedText style={styles.expAmount}>₱{exp.cost}</ThemedText>
         {/* SIDE BY SIDE ICONS CONTAINER */}
         <View style={styles.iconActionsRow}>
-          <Pressable style={styles.iconPadding} onPress={() => {/* Edit Logic */}}>
+          <Pressable style={styles.iconPadding} onPress={() => {handleEditExpense(exp)}}>
             <Ionicons name="pencil" size={18} color="#007AFF" />
           </Pressable>
-          <Pressable style={styles.iconPadding} onPress={() => {/* Delete Logic */}}>
+          <Pressable style={styles.iconPadding} onPress={() => {handleDelete(exp.id)}}>
             <Ionicons name="trash" size={18} color="tomato" />
           </Pressable>
-          <Pressable style={styles.iconPadding} onPress={() => {/* Delete Logic */}}>
+          <Pressable
+            style={styles.iconPadding}
+            onPress={() => handleViewExpense(exp)}
+          >
             <Ionicons name="eye" size={18} color="grey" />
           </Pressable>
         </View>
@@ -648,12 +794,14 @@ export default function ViewBill() {
         </View>
       </View>
 
+
+
       {/* ADD EXPENSE MODAL */}
       <Modal visible={showExpenseModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modernModalBox}>
             <View style={styles.modalHeader}>
-              <ThemedText style={styles.modalTitle}>Add expense</ThemedText>
+              <ThemedText style={styles.modalTitle}>{isEditing ? "Edit Expense" : "Add Expense"}</ThemedText>
               <Pressable style={styles.closeBtn} onPress={() => setShowExpenseModal(false)}><ThemedText style={{fontWeight: '700'}}>Close</ThemedText></Pressable>
             </View>
 
@@ -725,12 +873,154 @@ export default function ViewBill() {
               )}
             </View>
             
-            <Pressable style={styles.modernSubmitBtn} onPress={handleAddExpense}>
+            <Pressable style={styles.modernSubmitBtn} onPress={isEditing ? handleUpdateExpense : handleAddExpense}>
               <ThemedText style={styles.submitBtnText}>Submit button</ThemedText>
             </Pressable>
           </View>
         </View>
       </Modal>
+
+      {/* EDIT EXPENSE MODAL */}
+<Modal visible={showEditExpenseModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.modernModalBox}>
+
+      <View style={styles.modalHeader}>
+        <ThemedText style={styles.modalTitle}>Edit Expense</ThemedText>
+        <Pressable style={styles.closeBtn} onPress={() => setShowEditExpenseModal(false)}>
+          <ThemedText style={{fontWeight: '700'}}>Close</ThemedText>
+        </Pressable>
+      </View>
+
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Name</ThemedText>
+        <TextInput
+          style={styles.modernInput}
+          value={expName}
+          onChangeText={setExpName}
+        />
+      </View>
+
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Cost</ThemedText>
+        <TextInput
+          style={styles.modernInput}
+          value={expCost}
+          onChangeText={setExpCost}
+          keyboardType="numeric"
+        />
+      </View>
+
+      {/* Paid by dropdown */}
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Paid by</ThemedText>
+
+        <Pressable
+          style={[styles.modernInput, styles.dropdownTrigger]}
+          onPress={() => setShowPaidByDropdown(!showPaidByDropdown)}
+        >
+          <ThemedText>{expPaidBy}</ThemedText>
+          <Ionicons name="chevron-down" size={18} color="#AEAEB2" />
+        </Pressable>
+
+        {showPaidByDropdown && (
+          <View style={styles.dropdownMenu}>
+            {involved.map(g => (
+              <Pressable
+                key={g.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setExpPaidBy(getDisplayName(g));
+                  setShowPaidByDropdown(false);
+                }}
+              >
+                <ThemedText>{getDisplayName(g)}</ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <Pressable style={styles.modernSubmitBtn} onPress={handleUpdateExpense}>
+        <ThemedText style={styles.submitBtnText}>Save Changes</ThemedText>
+      </Pressable>
+
+    </View>
+  </View>
+</Modal>
+
+{/* VIEW EXPENSE MODAL */}
+<Modal visible={showViewExpenseModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.modernModalBox}>
+
+      <View style={styles.modalHeader}>
+        <ThemedText style={styles.modalTitle}>Expense Details</ThemedText>
+        <Pressable
+          style={styles.closeBtn}
+          onPress={() => setShowViewExpenseModal(false)}
+        >
+          <ThemedText style={{fontWeight:'700'}}>Close</ThemedText>
+        </Pressable>
+      </View>
+
+      {viewingExpense && (
+        <>
+          <View style={{marginBottom:15}}>
+            <ThemedText style={styles.inputLabel}>Expense Name</ThemedText>
+            <ThemedText style={{fontSize:16,fontWeight:'600'}}>
+              {viewingExpense.name}
+            </ThemedText>
+          </View>
+
+          <View style={{marginBottom:15}}>
+            <ThemedText style={styles.inputLabel}>Cost</ThemedText>
+            <ThemedText style={{fontSize:16,fontWeight:'600'}}>
+              ₱{viewingExpense.cost}
+            </ThemedText>
+          </View>
+
+          <View style={{marginBottom:15}}>
+            <ThemedText style={styles.inputLabel}>Paid By</ThemedText>
+            <ThemedText style={{fontSize:16,fontWeight:'600'}}>
+              {viewingExpense.paid_by}
+            </ThemedText>
+          </View>
+
+          <ThemedText style={[styles.inputLabel,{marginTop:10}]}>
+            People Involved
+          </ThemedText>
+
+          <ScrollView style={{maxHeight:200}}>
+            {viewInvolved.map((p, index) => {
+              const member = p.bill_members;
+
+              const name =
+                member?.clerk_users?.nickname ||
+                member?.guest_users?.first_name ||
+                "Unknown";
+
+              return (
+                <View
+                  key={index}
+                  style={{
+                    flexDirection:'row',
+                    justifyContent:'space-between',
+                    paddingVertical:8
+                  }}
+                >
+                  <ThemedText>{name}</ThemedText>
+                  <ThemedText>₱{p.amount_spent}</ThemedText>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </>
+      )}
+
+    </View>
+  </View>
+</Modal>
 
       {/* CUSTOM SPLIT MODAL (Based on your new Wireframe) */}
       <Modal visible={showCustomModal} transparent animationType="slide">
@@ -1007,4 +1297,40 @@ const styles = StyleSheet.create({
         color: '#1C1C1E',
         marginLeft: 8
     },
+    totalExpenseCard: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  backgroundColor: '#FFF',
+  padding: 18,
+  borderRadius: 18,
+  marginBottom: 16,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 6 },
+  shadowOpacity: 0.06,
+  shadowRadius: 10,
+  elevation: 3,
+},
+
+totalLabel: {
+  fontSize: 13,
+  color: '#8E8E93',
+  fontWeight: '600',
+},
+
+totalAmount: {
+  fontSize: 26,
+  fontWeight: '800',
+  color: 'tomato',
+  marginTop: 4,
+},
+
+totalIcon: {
+  width: 46,
+  height: 46,
+  borderRadius: 12,
+  backgroundColor: '#FFF5F3',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
 });
