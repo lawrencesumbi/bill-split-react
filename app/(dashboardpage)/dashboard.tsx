@@ -25,6 +25,7 @@ const router = useRouter();
     const BILL_ADD_LIMIT = 5;
      const [showValidationModal, setShowValidationModal] = useState(false);
 const [validationMessage, setValidationMessage] = useState('');
+    const [showEmailExistsModal, setShowEmailExistsModal] = useState(false)
 
     const [errors, setErrors] = useState({});
 
@@ -165,49 +166,15 @@ const [validationMessage, setValidationMessage] = useState('');
     console.log(getBillEntries())
 
 
-const loadBills = async () => {
-    if (!user?.id) return;
-    
-    // Query 1: Get bills created by the user
-    const { data: createdBills, error: error1 } = await supabase
+    const loadBills = async () => {
+        const { data, error } = await supabase
         .from("bills")
         .select("*")
-        .eq("created_by", user.id)
-        .eq("status", "active");
-    
-    // Query 2: Get bills where user is a member
-    const { data: memberBills, error: error2 } = await supabase
-        .from("bill_members")
-        .select(`
-            bill_id,
-            bills!inner(*)
-        `)
-        .eq("user_id", user.id)
-        .eq("bills.status", "active");
-    
-    if (error1 || error2) {
-        console.error("Error loading bills:", error1 || error2);
-        return;
-    }
-    
-    // Extract the bills from the member query
-    const memberBillsData = memberBills?.map(item => item.bills) || [];
-    
-    // Combine both sets of bills
-    const allBills = [...(createdBills || []), ...memberBillsData];
-    
-    // Remove duplicates based on bill id
-    const uniqueBills = Array.from(
-        new Map(allBills.map(bill => [bill.id, bill])).values()
-    );
-    
-    // Sort by created_at descending
-    uniqueBills.sort((a, b) => 
-        new Date(b.created_at) - new Date(a.created_at)
-    );
-    
-    setBills(uniqueBills);
-};
+        .eq("created_by", user?.id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+        if (!error) setBills(data);
+    };
 
     const archiveBill = async (billId: number) => {
         const { error } = await supabase.from('bills').update({ status: 'archived'}).eq('id', billId);
@@ -273,6 +240,27 @@ const handleAddGuestSubmit = async () => {
   }
 
   try {
+
+    // Check if guest email already exists
+    const { data: existingGuest, error: checkError } = await supabase
+      .from("guest_users")
+      .select("id, first_name, last_name, email")
+      .eq("email", guestEmail)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Error checking existing guest:", checkError);
+      alert("Error checking email availability");
+      return;
+    }
+
+    // If email already exists, show the error modal
+    if (existingGuest) {
+        setShowAddGuestModal(false);
+      setShowEmailExistsModal(true);
+      return;
+    }
+
     // 1️⃣ Insert the guest into guest_users table
     const { data: guestData, error: guestError } = await supabase
       .from("guest_users")
@@ -613,16 +601,14 @@ const getDisplayName = (person) => {
                 <View style={styles.divider} />
                 <View style={styles.actionRow}>
                 <Pressable 
-                style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
-                onPress={() => router.push({
-                    pathname: '/viewbill', // Ensure this matches your file structure
-                    params: { billId: bill.id, billName: bill.name }
-                })}
-                >
-                <Ionicons name="create" size={18} color="#666" />
-                </Pressable>
-                {bill.created_by === user?.id && (
-                <>
+  style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
+  onPress={() => router.push({
+    pathname: '/viewbill', // Ensure this matches your file structure
+    params: { billId: bill.id, billName: bill.name }
+  })}
+>
+  <Ionicons name="create" size={18} color="#666" />
+</Pressable>
                 <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" onPress={() => archiveBill(bill.id)} /></Pressable>
                 <Pressable
                     style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
@@ -630,8 +616,6 @@ const getDisplayName = (person) => {
                 >
                 <Ionicons name="trash" size={18} color="#FF3B30" />
                 </Pressable>
-                </>
-                )}
                 </View>
             </View>
             ))}
@@ -710,31 +694,31 @@ const getDisplayName = (person) => {
         </Modal>
 
          {/* BILL LIMIT MODAL */}
-<Modal visible={showLimitModal} transparent animationType="fade">
-  <View style={styles.modalOverlay}>
-    <View style={styles.limitModalBox}>
+    <Modal visible={showLimitModal} transparent animationType="fade">
+    <View style={styles.modalOverlay}>
+        <View style={styles.limitModalBox}>
 
-      <Ionicons name="warning-outline" size={48} color="tomato" />
+        <Ionicons name="warning-outline" size={48} color="tomato" />
 
-      <ThemedText style={styles.limitTitle}>
-        Monthly Limit Reached
-      </ThemedText>
+        <ThemedText style={styles.limitTitle}>
+            Monthly Limit Reached
+        </ThemedText>
 
-      <ThemedText style={styles.limitMessage}>
-        You have reached the maximum number of bills allowed this month.
-      </ThemedText>
+        <ThemedText style={styles.limitMessage}>
+            You have reached the maximum number of bills allowed this month.
+        </ThemedText>
 
-      <Pressable
-        style={styles.limitBtn}
-        onPress={() => setShowLimitModal(false)}
-      >
-        <ThemedText style={styles.limitBtnText}>OK</ThemedText>
-      </Pressable>
-
+        <Pressable
+            style={styles.limitBtn}
+            onPress={() => setShowLimitModal(false)}
+        >
+            <ThemedText style={styles.limitBtnText}>OK</ThemedText>
+        </Pressable>
+        </View>
     </View>
-  </View>
+</Modal>
 
-</Modal>{/* PEOPLE LIMIT MODAL */}
+{/* PEOPLE LIMIT MODAL */}
 <Modal visible={showPeopleLimitModal} transparent animationType="fade">
   <View style={styles.modalOverlay}>
     <View style={styles.limitModalBox}>
@@ -756,6 +740,38 @@ const getDisplayName = (person) => {
         <ThemedText style={styles.limitBtnText}>OK</ThemedText>
       </Pressable>
 
+    </View>
+  </View>
+</Modal>
+
+{/* EMAIL EXISTS ERROR MODAL */}
+<Modal visible={showEmailExistsModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.limitModalBox}>
+      <Ionicons name="mail-outline" size={48} color="tomato" />
+      
+      <ThemedText style={styles.limitTitle}>
+        Email Already Exists
+      </ThemedText>
+      
+      <ThemedText style={styles.limitMessage}>
+        A guest with this email address is already registered in the system. 
+        Please use a different email or search for the existing guest.
+      </ThemedText>
+      
+      <View style={styles.emailModalButtonRow}>
+        <Pressable
+          style={[styles.limitBtn, styles.emailModalCancelBtn]}
+          onPress={() => {
+            setShowEmailExistsModal(false)
+            setShowAddGuestModal(true);
+          }}
+        >
+          <ThemedText style={[styles.limitBtnText, styles.emailModalCancelText]}>
+            Try Again
+          </ThemedText>
+        </Pressable>
+      </View>
     </View>
   </View>
 </Modal>
@@ -990,4 +1006,25 @@ limitBtnText: {
   fontWeight: '700',
   fontSize: 16
 },
+  emailModalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+    marginTop: 10,
+  },
+  
+  emailModalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+  },
+  
+  emailModalSearchBtn: {
+    flex: 1,
+    backgroundColor: 'tomato',
+  },
+  
+  emailModalCancelText: {
+    color: '#8E8E93',
+  },
     });

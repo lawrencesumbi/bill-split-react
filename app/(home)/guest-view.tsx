@@ -24,13 +24,15 @@ export default function GuestBillView() {
   const [expenses, setExpenses] = useState([]);
   const [involved, setInvolved] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [guestInfo, setGuestInfo] = useState([]);
+  const [guestInfo, setGuestInfo] = useState(null);
   const [guestFirstName, setGuestFirstName] = useState('');
   const [guestLastName, setGuestLastName] = useState('');
   const [guestId, setGuestId] = useState('')
   const [accessDenied, setAccessDenied] = useState(false);
   const [timeLeft, setTimeLeft] = useState("06:00:00");
+  const [accessLogId, setAccessLogId] = useState(null);
   const [sessionStart, setSessionStart] = useState(null)
+  const [totalSecondsUsed, setTotalSecondsUsed] = useState(0);
 
   // Modal & Password States
   const [showSignUpModal, setShowSignUpModal] = useState(false);
@@ -38,101 +40,214 @@ export default function GuestBillView() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
-const checkAccessWindow = (sessionStart) => {
-  if (!sessionStart) return true; // First time today
-
-  const now = new Date();
-  const start = new Date(sessionStart);
-  
-  // Reset if it's a new calendar day
-  if (now.toDateString() !== start.toDateString()) {
-    return true; 
-  }
-
-  const diffInMs = now - start;
-  const diffInHours = diffInMs / (1000 * 60 * 60);
-
-  return diffInHours < 6; // Returns true if under 6 hours
-};
-
-useEffect(() => {
-  // Update the timer every second
-  const timer = setInterval(() => {
-    if (sessionStart) {
-      setTimeLeft(getRemainingTime(sessionStart));
-    }
-  }, 1000);
-
-  return () => clearInterval(timer);
-}, [sessionStart]);
-
   useEffect(() => {
     fetchGuestBillData();
     fetchGuestInfo();
-  }, [inviteCode]);
+  }, [inviteCode, guestEmail, billId]);
 
- const fetchGuestInfo = async() => {
+  useEffect(() => {
+    // Update the timer every second
+    const timer = setInterval(() => {
+      if (sessionStart && accessLogId && !accessDenied) {
+        updateTimeUsed();
+        setTimeLeft(getRemainingTime(sessionStart));
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [sessionStart, accessLogId, accessDenied]);
+
+  const fetchGuestInfo = async () => {
   try {
-    const { data: guest, error } = await supabase
+    // First, get the guest user info
+    const { data: guest, error: guestError } = await supabase
       .from('guest_users')
       .select('*')
       .eq('email', guestEmail)
       .single();
 
-    if (guest) {
-      const now = new Date();
-      const lastStart = guest.last_session_start ? new Date(guest.last_session_start) : null;
+    if (guestError) {
+      console.error("Error fetching guest:", guestError);
+      return;
+    }
+    
+    setGuestInfo(guest);
+    setGuestFirstName(guest.first_name);
+    setGuestLastName(guest.last_name);
+    setGuestId(guest.id);
+
+    // Check for today's access log
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    const { data: todayLog, error: logError } = await supabase
+      .from('guest_access_logs')
+      .select('*')
+      .eq('guest_id', guest.id)
+      .eq('bill_id', billId)
+      .eq('access_date', today)
+      .maybeSingle();
+
+    if (logError) {
+      console.error("Error fetching today's log:", logError);
+    }
+
+    if (todayLog) {
+      // Found an existing log for today
+      setAccessLogId(todayLog.id);
+      setTotalSecondsUsed(todayLog.total_seconds_used || 0);
       
-      // 1. Check if it's a brand new day (Reset Logic)
-      const isNewDay = !lastStart || lastStart.toDateString() !== now.toDateString();
-
-      if (isNewDay) {
-        // Start a fresh 6-hour window for today
-        await supabase
-          .from('guest_users')
-          .update({ last_session_start: now.toISOString() })
-          .eq('id', guest.id);
-        
-        setSessionStart(now.toISOString());
-        setAccessDenied(false);
-      } else {
-        // 2. It's the same day, check if they are within the 6-hour window
-        const diffInHours = (now - lastStart) / (1000 * 60 * 60);
-        
-        if (diffInHours >= 6) {
-          setAccessDenied(true); // Lock them out
-        } else {
-          setSessionStart(guest.last_session_start);
-          setAccessDenied(false); // Let them in
-        }
+      // Check total seconds used
+      if (todayLog.total_seconds_used >= 21600) {
+        setAccessDenied(true);
+        return;
       }
-
-      setGuestFirstName(guest.first_name);
-      setGuestLastName(guest.last_name);
-      setGuestId(guest.id);
+      
+      const lastStart = todayLog.last_access_start ? new Date(todayLog.last_access_start) : null;
+      
+      if (lastStart) {
+        // Calculate current session duration
+        const now = new Date();
+        const sessionSeconds = Math.floor((now - lastStart) / 1000);
+        const totalWithCurrent = todayLog.total_seconds_used + sessionSeconds;
+        
+        if (totalWithCurrent >= 21600) {
+          setAccessDenied(true);
+        } else {
+          setSessionStart(lastStart.toISOString());
+          setAccessDenied(false);
+        }
+      } else {
+        // Log exists but no active session - start a new one
+        await startNewSession(todayLog.id);
+      }
+    } else {
+      // No log for today - create a new one
+      await createNewAccessLog(guest.id);
     }
   } catch (err) {
-    console.error("Error checking access:", err);
+    console.error("Error in fetchGuestInfo:", err);
+    setAccessDenied(true);
   }
 };
 
-const getRemainingTime = (lastSessionStart) => {
-  if (!lastSessionStart) return "06:00:00";
+  const createNewAccessLog = async (guestId) => {
+  try {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    // Don't include 'id' in the insert - let the database auto-generate it
+    const { data: newLog, error } = await supabase
+      .from('guest_access_logs')
+      .insert({
+        guest_id: guestId,
+        bill_id: billId,
+        access_date: today,
+        total_seconds_used: 0,
+        last_access_start: now.toISOString(),
+        // Remove 'id', 'created_at', and 'updated_at' - let database handle defaults
+        // created_at: now.toISOString(),  // Remove - has default now()
+        // updated_at: now.toISOString()   // Remove - has default now()
+      })
+      .select()
+      .single();
 
-  const startTime = new Date(lastSessionStart).getTime();
-  const now = new Date().getTime();
-  const sixHoursInMs = 6 * 60 * 60 * 1000;
-  const expiryTime = startTime + sixHoursInMs;
-  const remainingMs = expiryTime - now;
+    if (error) {
+      console.error("Error creating access log:", error);
+      throw error;
+    }
 
-  if (remainingMs <= 0) return "00:00:00";
-
-  const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-  const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
-
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    setAccessLogId(newLog.id);
+    setSessionStart(now.toISOString());
+    setTotalSecondsUsed(0);
+    setAccessDenied(false);
+    
+  } catch (err) {
+    console.error("Error in createNewAccessLog:", err);
+    setAccessDenied(true);
+  }
 };
+
+const startNewSession = async (logId) => {
+  try {
+    const now = new Date();
+    
+    // Update the log with new session start time
+    const { error } = await supabase
+      .from('guest_access_logs')
+      .update({
+        last_access_start: now.toISOString(),
+        // Remove updated_at - let the trigger handle it
+        // updated_at: now.toISOString()
+      })
+      .eq('id', logId);
+
+    if (error) {
+      console.error("Error starting new session:", error);
+      throw error;
+    }
+
+    setSessionStart(now.toISOString());
+    setAccessDenied(false);
+    
+  } catch (err) {
+    console.error("Error starting new session:", err);
+  }
+};
+
+  const updateTimeUsed = async () => {
+  if (!sessionStart || !accessLogId || accessDenied) return;
+
+  try {
+    const now = new Date();
+    const start = new Date(sessionStart);
+    const sessionSeconds = Math.floor((now - start) / 1000);
+    
+    // Only update if we've accumulated at least 1 second
+    if (sessionSeconds > 0) {
+      const totalUsed = totalSecondsUsed + sessionSeconds;
+      
+      // Check if we've exceeded the limit
+      if (totalUsed >= 21600) {
+        setAccessDenied(true);
+      }
+
+      // Update the total in the database
+      const { error } = await supabase
+        .from('guest_access_logs')
+        .update({
+          total_seconds_used: totalUsed,
+          // Remove updated_at - let the trigger handle it
+          // updated_at: now.toISOString()
+        })
+        .eq('id', accessLogId);
+
+      if (error) {
+        console.error("Error updating time used:", error);
+      } else {
+        setTotalSecondsUsed(totalUsed);
+      }
+    }
+  } catch (err) {
+    console.error("Error in updateTimeUsed:", err);
+  }
+};
+
+  const getRemainingTime = (lastSessionStart) => {
+    if (!lastSessionStart) return "06:00:00";
+
+    const usedSeconds = totalSecondsUsed || 0;
+    const remainingSeconds = Math.max(0, 21600 - usedSeconds); // 6 hours = 21600 seconds
+    
+    if (remainingSeconds <= 0) {
+      return "00:00:00";
+    }
+
+    const hours = Math.floor(remainingSeconds / 3600);
+    const minutes = Math.floor((remainingSeconds % 3600) / 60);
+    const seconds = remainingSeconds % 60;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   const fetchGuestBillData = async () => {
     if (!inviteCode) return;
@@ -169,8 +284,6 @@ const getRemainingTime = (lastSessionStart) => {
       setLoading(false);
     }
   };
-
-  
 
   const getDisplayName = (member) => {
     if (member.clerk_users?.nickname) return member.clerk_users.nickname;

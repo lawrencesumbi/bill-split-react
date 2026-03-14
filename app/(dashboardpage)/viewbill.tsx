@@ -1,3 +1,4 @@
+import { ErrorModal } from '@/components/error-modal';
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/utils/supabase';
 import { useUser } from '@clerk/clerk-expo';
@@ -24,6 +25,7 @@ export default function ViewBill() {
 
   // const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [showEmailExistsModal, setShowEmailExistsModal] = useState(false)
   
   // Modal Visibility States
   const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([])
@@ -40,6 +42,7 @@ export default function ViewBill() {
   const [guestFirstName, setGuestFirstName] = useState('');
   const [guestLastName, setGuestLastName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+  const [showErrorModal, setShowErrorModal] = useState(false)
 
   const [expName, setExpName] = useState('');
   const [expCost, setExpCost] = useState('');
@@ -108,6 +111,28 @@ const handleAddGuestToBill = async () => {
   setIsAddingGuest(true);
 
   try {
+
+      // Check if guest email already exists
+        const { data: existingGuest, error: checkError } = await supabase
+          .from("guest_users")
+          .select("id, first_name, last_name, email")
+          .eq("email", guestEmail)
+          .maybeSingle();
+    
+        if (checkError) {
+          console.error("Error checking existing guest:", checkError);
+          alert("Error checking email availability");
+          return;
+        }
+    
+        // If email already exists, show the error modal
+        if (existingGuest) {
+          setShowGuestModal(false);
+          setShowEmailExistsModal(true);
+          return;
+        }
+    
+
     // Insert the guest into guest_users table
     const { data: guestData, error: guestError } = await supabase
       .from("guest_users")
@@ -376,90 +401,21 @@ const handleSplitTypeChange = (type: string) => {
         }
         };
 
- const loadInvolved = async () => {
-  // First, get the bill details to know who the creator is
-  const { data: billData, error: billError } = await supabase
-    .from("bills")
-    .select("created_by, created_at")
-    .eq("id", billId)
-    .single();
-    
-  if (billError) {
-    console.error("Error loading bill:", billError);
-    return;
-  }
-  
-  // Get all bill members
-  const { data: membersData, error: membersError } = await supabase
+  const loadInvolved = async () => {
+    const { data, error } = await supabase
     .from("bill_members")
-    .select(`
-      *,
+    .select(`*,
       clerk_users:user_id (
         nickname
       ),
       guest_users:guest_id (
-        first_name,
-        last_name,
-        email
+        first_name
       )
-    `)
+      `)
     .eq("bill_id", billId);
-    
-  if (membersError) {
-    console.error("Error loading members:", membersError);
-    return;
+
+    if(!error) setInvolved(data);
   }
-  
-  // Check if creator is already in the members list
-  const creatorInMembers = membersData?.some(member => member.user_id === billData.created_by);
-  
-  let allInvolved = [...(membersData || [])];
-  
-  // If creator is not in members, add them as a special entry
-  if (!creatorInMembers) {
-    // Get creator's details from clerk_users
-    const { data: creatorData, error: creatorError } = await supabase
-      .from("clerk_users")
-      .select("nickname")
-      .eq("clerk_user_id", billData.created_by)
-      .single();
-      
-    if (!creatorError && creatorData) {
-      // Create a synthetic member entry for the creator
-      const creatorEntry = {
-        id: `creator-${billData.created_by}`, // Synthetic ID
-        bill_id: billId,
-        user_id: billData.created_by,
-        guest_id: null,
-        created_at: billData.created_at || new Date().toISOString(),
-        clerk_users: {
-          nickname: creatorData.nickname || "Bill Creator"
-        },
-        guest_users: null,
-        is_creator: true // Custom flag to identify creator
-      };
-      
-      allInvolved = [creatorEntry, ...allInvolved];
-    }
-  } else {
-    // If creator is in members, mark them with is_creator flag
-    allInvolved = allInvolved.map(member => {
-      if (member.user_id === billData.created_by) {
-        return { ...member, is_creator: true };
-      }
-      return member;
-    });
-  }
-  
-  // Sort the list to show creators first, then by creation date
-  allInvolved.sort((a, b) => {
-    if (a.is_creator && !b.is_creator) return -1;
-    if (!a.is_creator && b.is_creator) return 1;
-    return new Date(b.created_at) - new Date(a.created_at);
-  });
-  
-  setInvolved(allInvolved);
-};
 
   
   
@@ -622,7 +578,7 @@ const handleSplitTypeChange = (type: string) => {
   const remaining = parseFloat(expCost || '0') - totalAllocated;
 
 // --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
-    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress, billId, loadInvolved }) => {
+    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress, billId, loadInvolved, involvedPeople }) => {
         const [loading, setLoading] = useState(true);
         const [allPotentialUsers, setAllPotentialUsers] = useState([]); // Master list
         const [displayUsers, setDisplayUsers] = useState([]); // Filtered list
@@ -630,15 +586,18 @@ const handleSplitTypeChange = (type: string) => {
         const [filter, setFilter] = useState('all'); // all, registered, guest
         
         // Tracks selections within this modal session before confirmation
-        const [localSelection, setLocalSelection] = useState(currentSelection);
+        const [localSelection, setLocalSelection] = useState([]);
 
-        useEffect(() => {
-        if (visible) {
-            console.log("visible true")
-            loadUsersFromSupabase("all");
-            setLocalSelection(currentSelection);
-        }
-        }, [visible]);
+
+       useEffect(() => {
+  if (visible) {
+    console.log("visible true");
+    loadUsersFromSupabase("all");
+    setLocalSelection([]); // This sets initial selection from parent
+    setSearchQuery(""); // Reset search when modal opens
+    setFilter("all"); // Reset filter when modal opens
+  }
+}, [visible]);
 
         console.log("local selection:", localSelection, visible)
 
@@ -754,11 +713,25 @@ const handleSplitTypeChange = (type: string) => {
         }
         };
 
-        const handleConfirm = () => {
-        onConfirm(localSelection); // Pass local choices up to parent
-        insertSelectedPeople(localSelection);
-        onClose();
-        };
+      const handleConfirm = async () => {
+  // First, insert the selected people
+  await insertSelectedPeople(localSelection);
+  
+  // Then pass the selection to parent (if needed)
+  onConfirm(localSelection);
+  
+  // Reset local selection state
+  setLocalSelection([]);
+  
+  // Clear search query
+  setSearchQuery("");
+  
+  // Reset filter to default
+  setFilter("all");
+  
+  // Close the modal
+  onClose();
+};
 
         const FilterBadge = () => {
         let label = 'All';
@@ -773,61 +746,66 @@ const handleSplitTypeChange = (type: string) => {
         );
         };
 
-        const insertSelectedPeople = async (peopleToInsert) => {
-  if (peopleToInsert.length === 0) return;
+      const insertSelectedPeople = async (peopleToInsert) => {
+        if (peopleToInsert.length === 0) return;
+        if(involved.length + peopleToInsert.length >= 4) {
+          setShowErrorModal(true)
+           return;
+          }
 
-  const memberInserts = [];
+      const memberInserts = [];
 
-  for (const person of peopleToInsert) {
-    // Check if this is a registered user
-    const isRegisteredUser = 
-      person.type === 'registered' || 
-      (person.uniqueKey && person.uniqueKey.startsWith('r-'));
+      for (const person of peopleToInsert) {
+        // Check if this is a registered user
+        const isRegisteredUser = 
+          person.type === 'registered' || 
+          (person.uniqueKey && person.uniqueKey.startsWith('r-'));
 
-    if (isRegisteredUser) {
-      // REGISTERED USER
-      memberInserts.push({
-        bill_id: billId,
-        user_id: person.id,
-        guest_id: null
-      });
-    } else {
-      // GUEST USER - extract ID from uniqueKey
-      let guestId;
-      
-      if (person.uniqueKey && person.uniqueKey.startsWith('g-')) {
-        guestId = person.uniqueKey.replace('g-', '');
-      } else {
-        guestId = person.id;
+        if (isRegisteredUser) {
+          // REGISTERED USER
+          memberInserts.push({
+            bill_id: billId,
+            user_id: person.id,
+            guest_id: null
+          });
+        } else {
+          // GUEST USER - extract ID from uniqueKey
+          let guestId;
+          
+          if (person.uniqueKey && person.uniqueKey.startsWith('g-')) {
+            guestId = person.uniqueKey.replace('g-', '');
+          } else {
+            guestId = person.id;
+          }
+
+          memberInserts.push({
+            bill_id: billId,
+            user_id: null,
+            guest_id: guestId
+          });
+        }
       }
 
-      memberInserts.push({
-        bill_id: billId,
-        user_id: null,
-        guest_id: guestId
-      });
-    }
-  }
+      // Insert all selected members
+      if (memberInserts.length > 0) {
+        const { error: membersError } = await supabase
+          .from("bill_members")
+          .insert(memberInserts);
 
-  // Insert all selected members
-  if (memberInserts.length > 0) {
-    const { error: membersError } = await supabase
-      .from("bill_members")
-      .insert(memberInserts);
+        if (membersError) {
+          console.error("Error inserting members:", membersError);
+          alert("Error adding members to bill");
+          return false; // Return false to indicate failure
+        }
+      }
 
-    if (membersError) {
-      console.error("Error inserting members:", membersError);
-      alert("Error adding members to bill");
-      return;
-    }
-  }
-
-  // Refresh the involved people list
-  if (typeof loadInvolved === 'function') {
-    loadInvolved();
-  }
+      // Refresh the involved people list
+      if (typeof loadInvolved === 'function') {
+        await loadInvolved();
+      }
+  
+  return true; // Return true to indicate success
 };
-        
 
         return (
         <Modal visible={visible} transparent animationType="slide">
@@ -1052,51 +1030,76 @@ const handleSplitTypeChange = (type: string) => {
     </View>
   ) : (
     involved
-  .filter(i => i.user_id !== user?.id)
-  .map((person) => {
-    const name = getDisplayName(person);
-    const type = person.user_id !== null ? "Registered User" : "Guest";
+      .filter(i => i.user_id !== user?.id)
+      .map((person) => {
+        const name = getDisplayName(person);
 
-    return (
-      <View key={person.id} style={styles.personCard}>
-        {/* Avatar */}
-        <View style={styles.avatarCircle}>
-          <Ionicons
-            name={person.user_id ? "at-circle" : "person"}
-            size={20}
-            color="tomato"
-          />
-        </View>
+        const type =
+          person.user_id !== null ? "Registered User" : "Guest";
 
-        {/* Name + Type + Creator Badge */}
-        <View style={{ flex: 1 }}>
-          <View style={styles.nameRow}>
-            <ThemedText style={styles.personName}>
-              {name}
-            </ThemedText>
+        return (
+          <View key={person.id} style={styles.personCard}>
             
-            {/* Creator Badge */}
-            {person.is_creator && (
-              <View style={styles.creatorBadge}>
-                <Ionicons name="crown" size={12} color="#FFD700" />
-                <ThemedText style={styles.creatorBadgeText}>Creator</ThemedText>
-              </View>
-            )}
-          </View>
+            {/* Avatar */}
+            <View style={styles.avatarCircle}>
+              <Ionicons
+                name={person.user_id ? "at-circle" : "person"}
+                size={20}
+                color="tomato"
+              />
+            </View>
 
-          <ThemedText style={styles.personType}>
-            {type}
-          </ThemedText>
-        </View>
-      </View>
-    );
-  })
+            {/* Name + Type */}
+            <View style={{ flex: 1 }}>
+              <ThemedText style={styles.personName}>
+                {name}
+              </ThemedText>
+
+              <ThemedText style={styles.personType}>
+                {type}
+              </ThemedText>
+            </View>
+
+          </View>
+        );
+      })
   )}
 </ScrollView>
         </View>
       </View>
 
 
+{/* EMAIL EXISTS ERROR MODAL */}
+<Modal visible={showEmailExistsModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.limitModalBox}>
+      <Ionicons name="mail-outline" size={48} color="tomato" />
+      
+      <ThemedText style={styles.limitTitle}>
+        Email Already Exists
+      </ThemedText>
+      
+      <ThemedText style={styles.limitMessage}>
+        A guest with this email address is already registered in the system. 
+        Please use a different email or search for the existing guest.
+      </ThemedText>
+      
+      <View style={styles.emailModalButtonRow}>
+        <Pressable
+          style={[styles.limitBtn, styles.emailModalCancelBtn]}
+          onPress={() => {
+            setShowEmailExistsModal(false)
+            setShowGuestModal(true);
+          }}
+        >
+          <ThemedText style={[styles.limitBtnText, styles.emailModalCancelText]}>
+            Try Again
+          </ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  </View>
+</Modal>
 
       {/* ADD EXPENSE MODAL */}
       <Modal visible={showExpenseModal} transparent animationType="fade">
@@ -1448,14 +1451,27 @@ const handleSplitTypeChange = (type: string) => {
 </Modal>
               <SelectPeopleModal 
             visible={showSelectPeopleModal} 
-            onClose={() => setShowSelectPeopleModal(false)}
+            onClose={() => {
+              setShowSelectPeopleModal(false)
+              setSelectedInvolvedPeople([])
+            }}
             onConfirm={(people) => setSelectedInvolvedPeople(people)}
             currentSelection={selectedInvolvedPeople}
             onAddGuestPress={openGuestModal}
             billId={billId}
             loadInvolved={loadInvolved}
+            involvedPeople={involved}
         />
+
+    <ErrorModal
+      visible={showErrorModal}
+      onClose={() => setShowErrorModal(false)}
+      title="Error Adding People"
+      message="You have exceeded the maximum amount of people that you can add: 3"
+    />
+
     </View>
+
   );
 }
 
@@ -1470,29 +1486,6 @@ const styles = StyleSheet.create({
   iconPadding: {
     paddingLeft: 12, // Spaces the icons apart from each other
   },
-  // Add to your StyleSheet
-nameRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 8,
-  marginBottom: 2,
-},
-
-creatorBadge: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: '#FFF5E6',
-  paddingHorizontal: 6,
-  paddingVertical: 2,
-  borderRadius: 4,
-  gap: 2,
-},
-
-creatorBadgeText: {
-  fontSize: 10,
-  fontWeight: '700',
-  color: '#B87C00',
-},
   container: { flex: 1, backgroundColor: '#F8F9FB', padding: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
   topTitleBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
   breadcrumb: { fontSize: 13, color: '#8E8E93' },
@@ -1579,6 +1572,28 @@ creatorBadgeText: {
   toggleBtnTextActive: {
     color: 'tomato', // Matches your checkbox color
   },
+  emailModalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+    marginTop: 10,
+  },
+  
+  emailModalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+  },
+  
+  emailModalSearchBtn: {
+    flex: 1,
+    backgroundColor: 'tomato',
+  },
+  
+  emailModalCancelText: {
+    color: '#8E8E93',
+  },
+
    wireframeFilterBtn: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1726,7 +1741,41 @@ personCard: {
   borderWidth: 1,
   borderColor: '#F2F2F7'
 },
+ limitModalBox: {
+  width: 320,
+  backgroundColor: '#fff',
+  borderRadius: 22,
+  padding: 25,
+  alignItems: 'center'
+},
 
+limitTitle: {
+  fontSize: 20,
+  fontWeight: '800',
+  marginTop: 10,
+  color: '#1C1C1E'
+},
+
+limitMessage: {
+  fontSize: 14,
+  color: '#8E8E93',
+  textAlign: 'center',
+  marginTop: 8,
+  marginBottom: 20
+},
+
+limitBtn: {
+  backgroundColor: 'tomato',
+  paddingVertical: 10,
+  paddingHorizontal: 30,
+  borderRadius: 12
+},
+
+limitBtnText: {
+  color: '#fff',
+  fontWeight: '700',
+  fontSize: 16
+},
 avatarCircle: {
   width: 36,
   height: 36,
