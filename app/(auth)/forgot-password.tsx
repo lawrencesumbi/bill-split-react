@@ -1,41 +1,107 @@
+import { useSignIn } from '@clerk/clerk-expo';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
-import { ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ImageBackground, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import validator from 'validator';
 
 export default function ForgotPassword() {
+  const { signIn, setActive } = useSignIn()
   const router = useRouter();
   const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('')
+  const [confirmPassword, setConfirmPassword] = React.useState('')
   const [code, setCode] = React.useState('');
+  const [successfulCreation, setSuccessfulCreation] = React.useState(false)
   const [showCodeInput, setShowCodeInput] = React.useState(false);
+  const [errors, setErrors] = React.useState({})
+  const [emailRequestLoading, setEmailRequestLoading] = React.useState(false)
+  const [codeSubmitLoading, setCodeSubmitLoading] = React.useState(false)
+  const [clerkErrors, setClerkErrors] = React.useState(Object)
+  const [codeAccepted, setCodeAccepted] = React.useState(false)
+  const [resetPasswordLoading, setResetPasswordLoading] = React.useState(false)
 
-  // Handle sending code
+  let messages = []
+  if (clerkErrors.errors) {
+    messages = clerkErrors.errors
+  }
 
-  const sendCode = () => {
+  // --- LOGIC (REMAINING UNTOUCHED AS REQUESTED) ---
+  const handleSubmit = () => {
+    if(validateForm()) {
+      onReset()
+    }
+  }
 
-    if (!email) return alert('Please enter your email.');
+  const validateForm = () => {
+    let errors = {}
+    if(validator.isEmpty(password)) errors.password = "You must enter a new password"
+    if (password.length < 8) errors.passwordTooShort = "Password must be at least 8 characters."
+    if (password.length > 16) errors.passwordTooLong = "Password must not exceed 16 characters."
+    if (!validator.isStrongPassword(password)) errors.passwordTooWeak = "Password must be a combination of at least one upper case and lower case characters, special characters and number."
+    if (!validator.equals(confirmPassword, password)) {
+      errors.passwordDoesntMatch = "Password does not match."
+      setConfirmPassword("")
+    }
+    setErrors(errors)
+    return Object.keys(errors).length === 0;
+  }
 
-    // Here you would call your backend to send the code
-    setShowCodeInput(true);
-    
-    alert('Code sent to your email!');
+  const validateEmail = () => {
+    let errors = {}
+    if (validator.isEmpty(email)) errors.email = "Email must not be empty"
+    setErrors(errors)
+    return Object.keys(errors).length === 0;
+  }
+
+  const validateCodeAndPass = () => {
+    let errors = {}
+    if(validator.isEmpty(code)) errors.code = "Code must not be empty."
+    setErrors(errors)
+    return Object.keys(errors).length === 0;
+  }
+
+  const onRequestReset = async () => {
+    if(validateEmail()) {
+      setEmailRequestLoading(true)
+      console.log(email)
+      try {
+        await signIn!.create({
+          strategy: 'reset_password_email_code',
+          identifier: email
+        })
+        setEmailRequestLoading(false)
+        setSuccessfulCreation(true)
+      } catch(err: any) {
+        setClerkErrors(err)
+        setEmailRequestLoading(false)
+        console.error(JSON.stringify(err, null, 2))
+        console.log("error")
+      }
+    }
   };
 
-  // Handle verifying code
-
-  const verifyCode = () => {
-    if (!code) return alert('Please enter the code.');
-
-
-    // Here you would call your backend to verify the code
-
-
-
-    alert('Code verified! You can now reset your password.');
-
-    // You can navigate to a reset password page
-    router.push('/reset-password');
+  const onReset = async () => {
+    if(validateCodeAndPass()) {
+      setCodeSubmitLoading(true)
+      try {
+        const result = await signIn!.attemptFirstFactor({
+          strategy: 'reset_password_email_code',
+          code,
+          password
+        })
+        setCodeSubmitLoading(false)
+        router.replace('/')
+        await setActive!({ session: result.createdSessionId })
+      } catch (err: any) {
+        setClerkErrors(err)
+        console.error(JSON.stringify(err, null, 2))
+        setCodeSubmitLoading(false)
+      }
+    }
   };
 
+  // --- MODERNIZED UI ---
   return (
     <View style={styles.mainContainer}>
       <ImageBackground 
@@ -43,146 +109,199 @@ export default function ForgotPassword() {
         style={styles.backgroundImage}
         resizeMode="cover"
       >
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={styles.overlay}
+        >
           <View style={styles.cardBox}>
-            {!showCodeInput ? (
-              <>
-                <Text style={styles.title}>Forgot Password?</Text>
-                <Text style={styles.subtitle}>
-                  Enter your email and we'll send you a code to reset your password.
-                </Text>
+            {/* Native-style Back Button */}
+            <Pressable 
+              style={styles.absBackButton} 
+              onPress={() => successfulCreation ? setSuccessfulCreation(false) : router.back()}
+            >
+              <Ionicons name="chevron-back" size={28} color="#1C1C1E" />
+            </Pressable>
 
-                <View style={styles.inputContainer}>
+            {!successfulCreation ? (
+              <View style={styles.fullWidth}>
+                <Text style={styles.title}>Reset Password</Text>
+                <Text style={styles.subtitle}>Enter your email to receive a verification code.</Text>
+
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Email Address</Text>
                   <TextInput 
-                    style={styles.input} 
-                    placeholder="testemail@example.com" 
-                    placeholderTextColor="#999"
+                    style={[styles.input, errors.email && styles.inputError]} 
+                    placeholder="name@example.com" 
+                    placeholderTextColor="#AEAEB2"
                     keyboardType="email-address"
                     autoCapitalize="none"
                     value={email}
                     onChangeText={setEmail}
                   />
+                  {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                 </View>
 
-                <Pressable style={styles.button} onPress={sendCode}>
-                  <Text style={styles.buttonText}>Send Code</Text>
+                <Pressable style={styles.primaryButton} onPress={onRequestReset}>
+                  {emailRequestLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send Code</Text>}
                 </Pressable>
-              </>
+              </View>
             ) : (
-              <>
-                <Text style={styles.title}>Enter Verification Code</Text>
-                <Text style={styles.subtitle}>
-                  A code has been sent to your email. Please enter it below.
-                </Text>
+              <ScrollView showsVerticalScrollIndicator={false} style={styles.fullWidth}>
+                <Text style={styles.title}>Verification</Text>
+                <Text style={styles.subtitle}>Check your inbox for the 6-digit code.</Text>
 
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Verification Code</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Code</Text>
                   <TextInput 
-                    style={styles.input} 
-                    placeholder="123456" 
-                    placeholderTextColor="#999"
+                    style={[styles.input, (errors.code || messages.length > 0) && styles.inputError]} 
+                    placeholder="000000" 
+                    placeholderTextColor="#AEAEB2"
                     keyboardType="numeric"
                     value={code}
                     onChangeText={setCode}
                   />
+                  {errors.code && <Text style={styles.errorText}>{errors.code}</Text>}
+                  {messages.map((m, i) => <Text key={i} style={styles.errorText}>{m.longMessage}</Text>)}
                 </View>
 
-                <Pressable style={styles.button} onPress={verifyCode}>
-                  <Text style={styles.buttonText}>Verify Code</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>New Password</Text>
+                  <TextInput
+                    style={[styles.input, (errors.password || errors.passwordTooShort || errors.passwordTooLong || errors.passwordTooWeak) && styles.inputError]}
+                    placeholder="••••••••"
+                    placeholderTextColor="#AEAEB2"
+                    secureTextEntry
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+                  {errors.passwordTooShort && <Text style={styles.errorText}>{errors.passwordTooShort}</Text>}
+                  {errors.passwordTooWeak && <Text style={styles.errorText}>{errors.passwordTooWeak}</Text>}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Confirm Password</Text>
+                  <TextInput
+                    style={[styles.input, errors.passwordDoesntMatch && styles.inputError]}
+                    placeholder="••••••••"
+                    placeholderTextColor="#AEAEB2"
+                    secureTextEntry
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                  />
+                  {errors.passwordDoesntMatch && <Text style={styles.errorText}>{errors.passwordDoesntMatch}</Text>}
+                </View>
+
+                <Pressable style={styles.primaryButton} onPress={handleSubmit}>
+                  {codeSubmitLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify & Update</Text>}
                 </Pressable>
 
-                <Pressable onPress={() => setShowCodeInput(false)}>
-                  <Text style={styles.backLink}>Back to email</Text>
+                <Pressable onPress={() => setSuccessfulCreation(false)} style={styles.linkContainer}>
+                  <Text style={styles.linkText}>Use a different email</Text>
                 </Pressable>
-              </>
+              </ScrollView>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </ImageBackground>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  backgroundImage: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
+  mainContainer: { flex: 1 },
+  backgroundImage: { flex: 1, height: '100%', width: '100%' },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   cardBox: {
-    width: '90%',
-    maxWidth: 400,
+    width: '92%',
+    maxWidth: 420,
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 40,
-    alignItems: 'center',
+    borderRadius: 28,
+    padding: 24,
+    paddingTop: 64,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
-    elevation: 10,
+    elevation: 8,
+    position: 'relative',
   },
+  absBackButton: {
+    position: 'absolute',
+    top: 20,
+    left: 16,
+    zIndex: 10,
+  },
+  fullWidth: { width: '100%' },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1C1C1E',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 15,
-    color: '#666',
+    color: '#8E8E93',
     textAlign: 'center',
-    marginBottom: 30,
-    lineHeight: 22,
+    marginBottom: 32,
+    lineHeight: 20,
+    paddingHorizontal: 10,
   },
-  inputContainer: {
-    width: '100%',
-    marginBottom: 25,
-  },
+  inputGroup: { marginBottom: 20 },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#444',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1C1C1E',
     marginBottom: 8,
+    marginLeft: 4,
   },
   input: {
-    width: '100%',
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    paddingHorizontal: 15,
+    height: 56,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 16,
+    paddingHorizontal: 16,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    color: '#000',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  button: {
+  inputError: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#FFF2F2',
+  },
+  primaryButton: {
     backgroundColor: 'tomato',
-    width: '100%',
-    height: 50,
-    borderRadius: 10,
+    height: 56,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginTop: 8,
+    shadowColor: 'tomato',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
   },
-  backLink: {
+  linkContainer: { marginTop: 20, alignItems: 'center' },
+  linkText: {
+    color: '#8E8E93',
     fontSize: 14,
-    color: '#888',
+    fontWeight: '600',
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 12,
+    marginTop: 6,
+    marginLeft: 4,
     fontWeight: '500',
   },
 });
