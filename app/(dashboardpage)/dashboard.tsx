@@ -587,39 +587,76 @@ const getDisplayName = (person) => {
             </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-            {bills.map((bill) => (
-            <View key={bill.id} style={styles.billCard}>
-                <View style={styles.billHeader}>
-                <View style={styles.iconBg}><Ionicons name="receipt" size={20} color="tomato" /></View>
-                <View style={styles.billMainInfo}>
-                    <ThemedText style={styles.billName}>{bill.name}</ThemedText>
-                    <ThemedText style={styles.billDate}>Created {new Date(bill.created_at).toLocaleDateString()}</ThemedText>
-                </View>
-                <View style={styles.statusBadge}><ThemedText style={styles.statusText}>{bill.status}</ThemedText></View>
-                </View>
-                <View style={styles.divider} />
-                <View style={styles.actionRow}>
-                <Pressable 
-  style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
-  onPress={() => router.push({
-    pathname: '/viewbill', // Ensure this matches your file structure
-    params: { billId: bill.id, billName: bill.name }
-  })}
+      <ScrollView 
+  contentContainerStyle={styles.scrollContainer} 
+  showsVerticalScrollIndicator={false}
 >
-  <Ionicons name="create" size={18} color="#666" />
-</Pressable>
-                <Pressable style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}><Ionicons name="archive" size={18} color="#e48108" onPress={() => archiveBill(bill.id)} /></Pressable>
-                <Pressable
-                    style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
-                    onPress={() => deleteBill(bill.id)}
-                >
-                <Ionicons name="trash" size={18} color="#FF3B30" />
-                </Pressable>
-                </View>
-            </View>
-            ))}
-        </ScrollView>
+  {bills.length === 0 ? (
+    <View style={styles.emptyState}>
+      <Ionicons name="receipt-outline" size={60} color="#CCC" />
+      <ThemedText style={styles.emptyTitle}>No Bills Yet</ThemedText>
+      <ThemedText style={styles.emptySubtitle}>
+        Create your first bill to start tracking expenses
+      </ThemedText>
+    </View>
+  ) : (
+    bills.map((bill) => (
+      <View key={bill.id} style={styles.billCard}>
+        <View style={styles.billHeader}>
+          <View style={styles.iconBg}>
+            <Ionicons name="receipt" size={20} color="tomato" />
+          </View>
+
+          <View style={styles.billMainInfo}>
+            <ThemedText style={styles.billName}>
+              {bill.name}
+            </ThemedText>
+            <ThemedText style={styles.billDate}>
+              Created {new Date(bill.created_at).toLocaleDateString()}
+            </ThemedText>
+          </View>
+
+          <View style={styles.statusBadge}>
+            <ThemedText style={styles.statusText}>
+              {bill.status}
+            </ThemedText>
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.actionRow}>
+          {/* VIEW / EDIT */}
+          <Pressable 
+            style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
+            onPress={() => router.push({
+              pathname: '/viewbill',
+              params: { billId: bill.id, billName: bill.name }
+            })}
+          >
+            <Ionicons name="create" size={18} color="#666" />
+          </Pressable>
+
+          {/* ARCHIVE */}
+          <Pressable 
+            style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
+            onPress={() => archiveBill(bill.id)}
+          >
+            <Ionicons name="archive" size={18} color="#e48108" />
+          </Pressable>
+
+          {/* DELETE */}
+          <Pressable
+            style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
+            onPress={() => deleteBill(bill.id)}
+          >
+            <Ionicons name="trash" size={18} color="#FF3B30" />
+          </Pressable>
+        </View>
+      </View>
+    ))
+  )}
+</ScrollView>
 
         {/* --- CREATE BILL MODAL (Simplified to show selected people list) --- */}
         <Modal visible={showAddModal} transparent animationType="fade">
@@ -1006,6 +1043,42 @@ limitBtnText: {
   fontWeight: '700',
   fontSize: 16
 },
+<<<<<<< HEAD
+emptyState: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginTop: 80,
+},
+
+emptyTitle: {
+  fontSize: 18,
+  fontWeight: '700',
+  color: '#8E8E93',
+  marginTop: 10,
+},
+
+emptySubtitle: {
+  fontSize: 13,
+  color: '#C7C7CC',
+  marginTop: 5,
+  textAlign: 'center',
+  paddingHorizontal: 40,
+},
+
+emptyBtn: {
+  marginTop: 15,
+  backgroundColor: 'tomato',
+  paddingVertical: 10,
+  paddingHorizontal: 20,
+  borderRadius: 10
+},
+
+emptyBtnText: {
+  color: '#fff',
+  fontWeight: '700'
+},
+=======
   emailModalButtonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1027,4 +1100,5 @@ limitBtnText: {
   emailModalCancelText: {
     color: '#8E8E93',
   },
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
     });

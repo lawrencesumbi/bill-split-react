@@ -1,38 +1,107 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/utils/supabase';
 import { useSignUp } from '@clerk/clerk-expo';
+<<<<<<< HEAD
+import { Ionicons } from '@expo/vector-icons';
+import { Link, useRouter } from 'expo-router';
+=======
 import { Ionicons } from '@expo/vector-icons'; // Added for the back icon
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
 import * as React from 'react';
-import { ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from 'react-native';
 import validator from 'validator';
+
+// 1. FIXED: Moved InputField OUTSIDE the main component so it doesn't unmount on every keystroke
+const InputField = ({ label, value, onChange, error, secure = false, autoCap = "none" as any, keyboard = "default" as any, style = {} }) => {
+  const [isPasswordVisible, setIsPasswordVisible] = React.useState(false);
+  const isPasswordField = secure;
+
+  return (
+    <View style={[styles.inputContainer, style]}>
+      <ThemedText style={styles.label}>{label}</ThemedText>
+      <View style={styles.inputWrapper}>
+        <TextInput 
+          style={[styles.input, error && styles.inputError, isPasswordField && { paddingRight: 50 }]} 
+          value={value} 
+          onChangeText={onChange} 
+          placeholder="" // Removed all placeholders
+          placeholderTextColor="#C7C7CC"
+          secureTextEntry={isPasswordField && !isPasswordVisible}
+          autoCapitalize={autoCap}
+          keyboardType={keyboard}
+          onKeyPress={(e: any) => {
+            if (e.nativeEvent.key === ' ') {
+              e.stopPropagation();
+            }
+          }}
+        />
+        {isPasswordField && (
+          <Pressable 
+            onPress={() => setIsPasswordVisible(!isPasswordVisible)} 
+            style={styles.eyeIcon}
+          >
+            <Ionicons 
+              name={isPasswordVisible ? "eye-off" : "eye"} 
+              size={22} 
+              color="#8E8E93" 
+            />
+          </Pressable>
+        )}
+      </View>
+      <View style={styles.errorContainer}>
+          {error && <Text style={styles.fieldError}>{error}</Text>}
+      </View>
+    </View>
+  );
+};
 
 export default function Page() {
   const { isLoaded, signUp, setActive } = useSignUp();
   const router = useRouter();
+<<<<<<< HEAD
+  
+  // Form States
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
+=======
   const { gFName, gLName, gEmail, gId, guest } = useLocalSearchParams();
 
   // States
   const [firstName, setFirstName] = React.useState(gFName ?? '');
   const [lastName, setLastName] = React.useState(gLName ?? '');
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
   const [nickname, setNickname] = React.useState('');
   const [username, setUsername] = React.useState('');
   const [emailAddress, setEmailAddress] = React.useState(gEmail ?? '');
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
+  
+  // UI States
   const [pendingVerification, setPendingVerification] = React.useState(false);
   const [verificationLoading, setVerificationLoading] = React.useState(false);
   const [code, setCode] = React.useState('');
-  const [errors, setErrors] = React.useState({} as any);
-  const [clerkErrors, setClerkErrors] = React.useState(Object);
-  const [users, setUsers] = React.useState([]);
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [clerkErrors, setClerkErrors] = React.useState<any>(Object);
+  const [users, setUsers] = React.useState<any[]>([]);
   const [signupLoading, setSignupLoading] = React.useState(false);
 
 
   React.useEffect(() => {
     const getUsers = async () => {
       try {
-        const { data: clerk_users } = await supabase.from('clerk_users').select();
+        const { data: clerk_users } = await supabase.from('clerk_users').select('nickname');
         if (clerk_users) setUsers(clerk_users);
       } catch (error) { console.error(error); }
     };
@@ -60,29 +129,37 @@ export default function Page() {
         };
 
   const validateForm = () => {
-    let errors = {} as any;
-    if (validator.isEmpty(firstName)) errors.firstName = "First name required";
-    if (validator.isEmpty(lastName)) errors.lastName = "Last name required";
-    if (validator.isEmpty(nickname)) errors.nickname = "Nickname required";
-    if (users.some(u => u.nickname === nickname)) errors.nicknameExists = "Nickname taken";
-    if (validator.isEmpty(username)) errors.username = "Username required";
-    if (!validator.isEmail(emailAddress)) errors.emailFormat = "Invalid email format";
-    if (password.length < 8) errors.passwordTooShort = "Min 8 characters";
-    if (!validator.equals(confirmPassword, password)) errors.passwordDoesntMatch = "Passwords do not match";
+    let newErrors: Record<string, string> = {};
+    if (validator.isEmpty(firstName.trim())) newErrors.firstName = "First name is required";
+    if (validator.isEmpty(lastName.trim())) newErrors.lastName = "Last name is required";
+    if (validator.isEmpty(nickname.trim())) {
+        newErrors.nickname = "Nickname is required";
+    } else if (users.some(u => u.nickname?.toLowerCase() === nickname.toLowerCase())) {
+        newErrors.nickname = "Nickname is already taken";
+    }
+    if (validator.isEmpty(username.trim())) newErrors.username = "Username is required";
+    if (validator.isEmpty(emailAddress.trim())) {
+        newErrors.email = "Email is required";
+    } else if (!validator.isEmail(emailAddress.trim())) {
+        newErrors.email = "Invalid email format";
+    }
+    if (password.length < 8) newErrors.password = "Min 8 characters required";
+    if (!validator.equals(confirmPassword, password)) newErrors.confirmPassword = "Passwords do not match";
 
-    setErrors(errors);
-    return Object.keys(errors).length === 0;
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const onSignUpPress = async () => {
     if (!isLoaded || !validateForm()) return;
     setSignupLoading(true);
+    setClerkErrors({});
     try {
       await signUp.create({ firstName, lastName, username, emailAddress, password });
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setPendingVerification(true);
-    } catch (err) {
-      setClerkErrors(JSON.parse(JSON.stringify(err, null, 2)));
+    } catch (err: any) {
+      setClerkErrors(err);
     } finally {
       setSignupLoading(false);
     }
@@ -101,9 +178,15 @@ export default function Page() {
         await setActive({ session: attempt.createdSessionId });
         router.replace('/');
       }
-    } catch (err) { console.error(err); } finally { setVerificationLoading(false); }
+    } catch (err: any) { 
+        setClerkErrors(err);
+    } finally { 
+        setVerificationLoading(false); 
+    }
   };
 
+<<<<<<< HEAD
+=======
   if (pendingVerification) {
     return (
       <ImageBackground source={require('../../assets/images/bg.jpg')} style={styles.background}>
@@ -124,123 +207,130 @@ export default function Page() {
     
       
 
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
   return (
     <ImageBackground source={require('../../assets/images/bg.jpg')} style={styles.background}>
-      <View style={styles.overlay}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.overlay}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          
           <View style={styles.registerBox}>
-            {/* BACK BUTTON */}
-            <Pressable style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="chevron-back" size={24} color="#8E8E93" />
+            <Pressable style={styles.backButton} onPress={() => pendingVerification ? setPendingVerification(false) : router.back()}>
+              <Ionicons name="chevron-back" size={28} color="#1C1C1E" />
             </Pressable>
 
-            <ThemedText style={styles.title}>Sign Up</ThemedText>
-            <ThemedText style={styles.subtitle}>Create your account to start</ThemedText>
+            <View style={styles.headerSection}>
+              <ThemedText style={styles.title}>{pendingVerification ? "Verify Email" : "Sign Up"}</ThemedText>
+              <ThemedText style={styles.subtitle}>
+                {pendingVerification ? "Enter the code sent to your inbox" : "Create your account to start"}
+              </ThemedText>
+            </View>
 
             {clerkErrors.errors?.map((err: any, i: number) => (
               <Text key={i} style={styles.clerkError}>{err.longMessage}</Text>
             ))}
 
-            <View style={styles.row}>
-              <View style={styles.flex1}>
-                <ThemedText style={styles.label}>First Name</ThemedText>
-                <TextInput style={[styles.input, errors.firstName && styles.inputError]} value={firstName} onChangeText={setFirstName} placeholder="John" />
-              </View>
-              <View style={styles.flex1}>
-                <ThemedText style={styles.label}>Last Name</ThemedText>
-                <TextInput style={[styles.input, errors.lastName && styles.inputError]} value={lastName} onChangeText={setLastName} placeholder="Doe" />
-              </View>
-            </View>
+            {!pendingVerification ? (
+              <>
+                <View style={styles.row}>
+                  <InputField label="First Name" value={firstName} onChange={setFirstName} error={errors.firstName} style={styles.flex1} autoCap="sentences" />
+                  <InputField label="Last Name" value={lastName} onChange={setLastName} error={errors.lastName} style={styles.flex1} autoCap="sentences" />
+                </View>
 
-            <ThemedText style={styles.label}>Nickname</ThemedText>
-            <TextInput style={[styles.input, (errors.nickname || errors.nicknameExists) && styles.inputError]} value={nickname} onChangeText={setNickname} placeholder="Johnny" />
+                <InputField label="Nickname" value={nickname} onChange={setNickname} error={errors.nickname} />
+                <InputField label="Username" value={username} onChange={setUsername} error={errors.username} autoCap="none" />
+                <InputField label="Email Address" value={emailAddress} onChange={setEmailAddress} error={errors.email} autoCap="none" keyboard="email-address" />
+                <InputField label="Password" value={password} onChange={setPassword} error={errors.password} secure />
+                <InputField label="Confirm Password" value={confirmPassword} onChange={setConfirmPassword} error={errors.confirmPassword} secure />
 
-            <ThemedText style={styles.label}>Username</ThemedText>
-            <TextInput style={[styles.input, errors.username && styles.inputError]} value={username} onChangeText={setUsername} placeholder="johndoe123" autoCapitalize="none" />
+                <Pressable style={styles.button} onPress={onSignUpPress}>
+                  {signupLoading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Create Account</ThemedText>}
+                </Pressable>
 
-            <ThemedText style={styles.label}>Email Address</ThemedText>
-            <TextInput style={[styles.input, errors.emailFormat && styles.inputError]} value={emailAddress} onChangeText={setEmailAddress} autoCapitalize="none" keyboardType="email-address" placeholder="email@example.com" />
+                <Link href="/(auth)/sign-in" asChild>
+                  <Pressable style={styles.footerPressable}>
+                    <ThemedText style={styles.footerText}>
+                      Already have an account? <ThemedText style={styles.link}>Sign In</ThemedText>
+                    </ThemedText>
+                  </Pressable>
+                </Link>
+              </>
+            ) : (
+              <>
+                <InputField label="Verification Code" value={code} onChange={setCode} error={errors.code} keyboard="numeric" />
+                
+                <Pressable style={styles.button} onPress={onVerifyPress}>
+                  {verificationLoading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Verify Account</ThemedText>}
+                </Pressable>
 
-            <ThemedText style={styles.label}>Password</ThemedText>
-            <TextInput style={[styles.input, errors.passwordTooShort && styles.inputError]} value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" />
-
-            <ThemedText style={styles.label}>Confirm Password</ThemedText>
-            <TextInput style={[styles.input, errors.passwordDoesntMatch && styles.inputError]} value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="••••••••" />
-
-            <Pressable style={styles.button} onPress={onSignUpPress}>
-              {signupLoading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Create Account</ThemedText>}
-            </Pressable>
-
-            <Link href="/(auth)/sign-in" asChild>
-              <Pressable>
-                <ThemedText style={styles.footerText}>
-                  Already have an account? <ThemedText style={styles.link}>Sign In</ThemedText>
-                </ThemedText>
-              </Pressable>
-            </Link>
+                <Pressable onPress={() => signUp.prepareEmailAddressVerification({ strategy: 'email_code' })}>
+                  <ThemedText style={styles.footerText}>
+                    Didn't get a code? <ThemedText style={styles.link}>Resend</ThemedText>
+                  </ThemedText>
+                </Pressable>
+              </>
+            )}
           </View>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  background: { flex: 1, height: '100%', width: '100%'  },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center' },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 40, alignItems: 'center' },
+  background: { flex: 1, width: '100%', height: '100%' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
   registerBox: {
-    width: '90%',
+    width: '92%',
     maxWidth: 420,
     backgroundColor: '#fff',
-    borderRadius: 30,
-    padding: 25,
-    paddingTop: 45, // Increased padding to make room for back button
+    borderRadius: 32,
+    padding: 24,
+    paddingTop: 60,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 10,
-    position: 'relative',
   },
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 10,
-    padding: 5,
-  },
-  title: { fontSize: 32, fontWeight: '900', color: '#1C1C1E', textAlign: 'center', marginBottom: 5 },
-  subtitle: { fontSize: 16, color: '#8E8E93', textAlign: 'center', marginBottom: 25, fontWeight: '500' },
-  row: { flexDirection: 'row', gap: 10, width: '100%' },
+  headerSection: { marginBottom: 10 },
+  backButton: { position: 'absolute', top: 20, left: 16, zIndex: 10, padding: 8 },
+  title: { fontSize: 32, fontWeight: '900', color: '#1C1C1E', textAlign: 'center' },
+  subtitle: { fontSize: 15, color: '#8E8E93', textAlign: 'center', marginTop: 4, fontWeight: '500' },
+  inputContainer: { width: '100%', marginBottom: 4 }, 
+  inputWrapper: { position: 'relative', width: '100%', justifyContent: 'center' },
+  row: { flexDirection: 'row', gap: 12, width: '100%' },
   flex1: { flex: 1 },
-  label: { fontSize: 13, fontWeight: '700', color: '#AEAEB2', marginBottom: 8, marginLeft: 4 },
+  label: { fontSize: 13, fontWeight: '700', color: '#1C1C1E', marginBottom: 6, marginLeft: 4 },
   input: {
-    height: 52,
+    height: 54,
     backgroundColor: '#F2F2F7',
-    borderRadius: 15,
+    borderRadius: 16,
     paddingHorizontal: 16,
     fontSize: 16,
-    marginBottom: 15,
-    borderWidth: 1,
+    color: '#000',
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
+  eyeIcon: { position: 'absolute', right: 16, padding: 8 },
   inputError: { borderColor: '#FF3B30', backgroundColor: '#FFF2F2' },
+  errorContainer: { minHeight: 18, marginTop: 2, marginBottom: 4 },
+  fieldError: { color: '#FF3B30', fontSize: 11, fontWeight: '600', marginLeft: 4 },
+  clerkError: { color: '#FF3B30', textAlign: 'center', marginBottom: 15, fontSize: 13, fontWeight: '700', paddingHorizontal: 10 },
   button: {
     backgroundColor: 'tomato',
-    height: 56,
+    height: 58,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
     marginBottom: 20,
     shadowColor: 'tomato',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    elevation: 4,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 5,
   },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  footerText: { textAlign: 'center', color: '#8E8E93', fontSize: 15, fontWeight: '500' },
+  footerPressable: { paddingVertical: 10 },
+  footerText: { textAlign: 'center', color: '#8E8E93', fontSize: 14, fontWeight: '600' },
   link: { color: 'tomato', fontWeight: '800' },
-  clerkError: { color: '#FF3B30', textAlign: 'center', marginBottom: 10, fontSize: 13, fontWeight: '600' },
 });

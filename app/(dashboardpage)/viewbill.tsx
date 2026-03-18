@@ -5,7 +5,11 @@ import { useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
 
 
@@ -1006,66 +1010,60 @@ const handleSplitTypeChange = (type: string) => {
             </ScrollView>
         </View>
 
-        <View style={styles.rightColumn}>
-          <View style={styles.peopleHeader}>
-            <ThemedText style={styles.columnTitle}>Involved people</ThemedText>
-            <Pressable
-              style={[
-                styles.addPersonBtn,
-                billStatus === "archived" && { opacity: 0.4 }
-              ]}
-              onPress={() => setShowSelectPeopleModal(true)}
-              disabled={billStatus === "archived"}
-            >
-              <Ionicons name="person-add" size={16} color="tomato" />
-            </Pressable>
-          </View>
-        <ScrollView showsVerticalScrollIndicator={false}>
-  {involved.filter(i => i.user_id !== user?.id).length === 0 ? (
-    <View style={styles.emptyPeople}>
-      <Ionicons name="people-outline" size={36} color="#D1D1D6" />
-      <ThemedText style={styles.emptyText}>
-        No people added yet
-      </ThemedText>
+      {/* CONSISTENT INVOLVED PEOPLE SIDEBAR */}
+<View style={styles.rightColumn}>
+  <View style={styles.peopleHeader}>
+    <View style={styles.iconCircle}>
+      <Ionicons name="people" size={26} color="tomato" />
     </View>
-  ) : (
-    involved
-      .filter(i => i.user_id !== user?.id)
-      .map((person) => {
-        const name = getDisplayName(person);
+    <ThemedText style={styles.infoTitle}>Involved People</ThemedText>
+    <ThemedText style={styles.countText}>{involved.length} Total Members</ThemedText>
+  </View>
 
-        const type =
-          person.user_id !== null ? "Registered User" : "Guest";
+  <ScrollView style={styles.memberList} showsVerticalScrollIndicator={false}>
+    {involved.map((member) => {
+      const isRegistered = !!member.clerk_users;
+      const displayName = getDisplayName(member);
 
-        return (
-          <View key={person.id} style={styles.personCard}>
-            
-            {/* Avatar */}
-            <View style={styles.avatarCircle}>
-              <Ionicons
-                name={person.user_id ? "at-circle" : "person"}
-                size={20}
-                color="tomato"
-              />
-            </View>
-
-            {/* Name + Type */}
-            <View style={{ flex: 1 }}>
-              <ThemedText style={styles.personName}>
-                {name}
-              </ThemedText>
-
-              <ThemedText style={styles.personType}>
-                {type}
-              </ThemedText>
-            </View>
-
+      return (
+        <View key={member.id} style={styles.memberRow}>
+          <View style={[styles.avatarPlaceholder, isRegistered && styles.avatarRegistered]}>
+            <ThemedText style={[styles.avatarText, isRegistered && styles.avatarTextRegistered]}>
+              {displayName.charAt(0).toUpperCase()}
+            </ThemedText>
           </View>
-        );
-      })
-  )}
-</ScrollView>
+          
+          <View style={styles.memberInfo}>
+            <ThemedText style={styles.memberName} numberOfLines={1}>
+              {displayName}
+            </ThemedText>
+            <ThemedText style={styles.memberRole}>
+              {isRegistered ? 'Verified User' : 'Guest'}
+            </ThemedText>
+          </View>
+
+          {isRegistered ? (
+            <Ionicons name="checkmark-circle" size={18} color="#34C759" />
+          ) : (
+            <View style={styles.guestBadge}>
+              <ThemedText style={styles.guestBadgeText}>Guest</ThemedText>
+            </View>
+          )}
         </View>
+      );
+    })}
+  </ScrollView>
+  
+  <View style={styles.spacer} />
+
+  <TouchableOpacity 
+    style={styles.modernSubmitBtn} 
+    onPress={() => setShowSelectPeopleModal(true)}
+  >
+    <Ionicons name="add-circle" size={20} color="#FFF" style={{ marginRight: 8 }} />
+    <ThemedText style={styles.submitBtnText}>Add People</ThemedText>
+  </TouchableOpacity>
+</View>
       </View>
 
 
@@ -1104,7 +1102,7 @@ const handleSplitTypeChange = (type: string) => {
       {/* ADD EXPENSE MODAL */}
       <Modal visible={showExpenseModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modernModalBox}>
+     <View style={[styles.modernModalBox, { overflow: 'visible' }]}>
             <View style={styles.modalHeader}>
               <ThemedText style={styles.modalTitle}>{isEditing ? "Edit Expense" : "Add Expense"}</ThemedText>
               <Pressable style={styles.closeBtn} onPress={() => setShowExpenseModal(false)}><ThemedText style={{fontWeight: '700'}}>Close</ThemedText></Pressable>
@@ -1120,7 +1118,7 @@ const handleSplitTypeChange = (type: string) => {
             </View>
 
             {/* PAID BY DROPDOWN */}
-            <View style={styles.inputWrapper}>
+           <View style={[styles.inputWrapper, { zIndex: 999 }]}>
               <ThemedText style={styles.inputLabel}>Paid by:</ThemedText>
               <Pressable style={[styles.modernInput, styles.dropdownTrigger]} onPress={() => setShowPaidByDropdown(!showPaidByDropdown)}>
                 <ThemedText>{expPaidBy}</ThemedText>
@@ -1525,11 +1523,27 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 22, fontWeight: '800' },
   closeBtn: { padding: 8, backgroundColor: '#F2F2F7', borderRadius: 8 },
-  inputWrapper: { marginBottom: 15, zIndex: 10 },
+  inputWrapper: { marginBottom: 15, zIndex: 1},
   inputLabel: { fontSize: 12, fontWeight: '700', color: '#AEAEB2', marginBottom: 5 },
   modernInput: { backgroundColor: '#F2F2F7', padding: 12, borderRadius: 12 },
   dropdownTrigger: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dropdownMenu: { backgroundColor: '#FFF', borderRadius: 12, position: 'absolute', top: 60, width: '100%', zIndex: 100, borderWidth: 1, borderColor: '#F2F2F7' },
+  dropdownMenu: {
+  position: 'absolute',
+  top: 70, // pushes it BELOW the input
+  left: 0,
+  right: 0,
+  backgroundColor: '#FFF',
+  borderRadius: 12,
+  borderWidth: 1,
+  borderColor: '#E5E5EA',
+  zIndex: 999,
+  elevation: 10, // Android fix
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.1,
+  shadowRadius: 10,
+  maxHeight: 150,
+},
   dropdownItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
   involvedListContainer: { maxHeight: 100, marginBottom: 15, backgroundColor: '#F9F9F9', borderRadius: 10, padding: 5 },
   involvedRow: { flexDirection: 'row', alignItems: 'center', padding: 5 },
@@ -1686,7 +1700,7 @@ const styles = StyleSheet.create({
   flexDirection: 'row',
   justifyContent: 'space-between',
   alignItems: 'center',
-  backgroundColor: '#FFF',
+  backgroundColor: 'tomato',
   padding: 18,
   borderRadius: 18,
   marginBottom: 16,
@@ -1699,15 +1713,16 @@ const styles = StyleSheet.create({
 
 totalLabel: {
   fontSize: 13,
-  color: '#8E8E93',
+  color: '#fff',
   fontWeight: '600',
 },
 
 totalAmount: {
   fontSize: 26,
   fontWeight: '800',
-  color: 'tomato',
+  color: '#fff',
   marginTop: 4,
+
 },
 
 totalIcon: {
@@ -1802,4 +1817,73 @@ emptyText: {
   marginTop: 8,
   fontSize: 14
 },
+rightColumn: { 
+    flex: 1, 
+    backgroundColor: '#FFF', 
+    borderRadius: 24, 
+    padding: 24, 
+    maxHeight: 550, 
+    borderWidth: 1, 
+    borderColor: '#F2F2F7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2 
+  },
+  peopleHeader: { 
+    alignItems: 'center', 
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8F9FB'
+  },
+  iconCircle: { 
+    width: 52, 
+    height: 52, 
+    borderRadius: 26, 
+    backgroundColor: '#FFF5F3', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 10 
+  },
+  infoTitle: { fontSize: 19, fontWeight: '800', color: '#1C1C1E' },
+  countText: { fontSize: 13, color: '#8E8E93', fontWeight: '600' },
+  
+  memberRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingVertical: 12, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#F8F9FB' 
+  },
+  memberInfo: { flex: 1 },
+  memberRole: { fontSize: 11, color: '#AEAEB2', marginTop: 2 },
+  
+  avatarPlaceholder: { 
+    width: 40, 
+    height: 40, 
+    borderRadius: 14, 
+    backgroundColor: '#F2F2F7', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: 12 
+  },
+  avatarRegistered: { backgroundColor: '#FFF5F3' },
+  avatarText: { fontSize: 15, fontWeight: '700', color: '#8E8E93' },
+  avatarTextRegistered: { color: 'tomato' },
+  
+  memberName: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
+  guestBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  guestBadgeText: { fontSize: 10, color: '#2E7D32', fontWeight: '800', textTransform: 'uppercase' },
+  
+  modernSubmitBtn: { 
+    flexDirection: 'row',
+    backgroundColor: '#1C1C1E', 
+    padding: 16, 
+    borderRadius: 18, 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  submitBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
 });
