@@ -1,8 +1,13 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/utils/supabase';
 import { useSignUp } from '@clerk/clerk-expo';
+<<<<<<< HEAD
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
+=======
+import { Ionicons } from '@expo/vector-icons'; // Added for the back icon
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
 import * as React from 'react';
 import {
   ActivityIndicator,
@@ -65,13 +70,21 @@ const InputField = ({ label, value, onChange, error, secure = false, autoCap = "
 export default function Page() {
   const { isLoaded, signUp, setActive } = useSignUp();
   const router = useRouter();
+<<<<<<< HEAD
   
   // Form States
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
+=======
+  const { gFName, gLName, gEmail, gId, guest } = useLocalSearchParams();
+
+  // States
+  const [firstName, setFirstName] = React.useState(gFName ?? '');
+  const [lastName, setLastName] = React.useState(gLName ?? '');
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
   const [nickname, setNickname] = React.useState('');
   const [username, setUsername] = React.useState('');
-  const [emailAddress, setEmailAddress] = React.useState('');
+  const [emailAddress, setEmailAddress] = React.useState(gEmail ?? '');
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   
@@ -84,6 +97,7 @@ export default function Page() {
   const [users, setUsers] = React.useState<any[]>([]);
   const [signupLoading, setSignupLoading] = React.useState(false);
 
+
   React.useEffect(() => {
     const getUsers = async () => {
       try {
@@ -93,6 +107,26 @@ export default function Page() {
     };
     getUsers();
   }, []);
+
+  const transferGuestData = async (guestId: number, cid: string) => {
+          // 1. Update bill_members to replace guest_user_id with clerk_user_id
+          await supabase
+            .from('bill_members')
+            .update({ user_id: cid, guest_id: null })
+            .eq('guest_id', guestId);
+      
+          // 2. Optionally, migrate other tables if guest had debts or expenses
+          await supabase
+            .from('expenses_involved')
+            .update({ bill_member_id: cid })  // adjust if needed
+            .eq('guest_id', guestId);
+      
+          // 3. Delete guest_user row if no longer needed
+          await supabase
+            .from('guest_users')
+            .delete()
+            .eq('id', guestId);
+        };
 
   const validateForm = () => {
     let newErrors: Record<string, string> = {};
@@ -137,8 +171,10 @@ export default function Page() {
     try {
       const attempt = await signUp.attemptEmailAddressVerification({ code });
       if (attempt.status === 'complete') {
-        await supabase.from('clerk_users').insert({ clerk_user_id: attempt.createdUserId, nickname });
+        const clerkUserId = attempt.createdUserId
+        await supabase.from('clerk_users').insert({ clerk_user_id: clerkUserId, nickname });
         await supabase.from('user_has_roles').insert({clerk_user_id: attempt.createdUserId});
+        await transferGuestData(Number(gId), clerkUserId);
         await setActive({ session: attempt.createdSessionId });
         router.replace('/');
       }
@@ -149,6 +185,29 @@ export default function Page() {
     }
   };
 
+<<<<<<< HEAD
+=======
+  if (pendingVerification) {
+    return (
+      <ImageBackground source={require('../../assets/images/bg.jpg')} style={styles.background}>
+        <View style={styles.overlay}>
+          <View style={styles.registerBox}>
+            <ThemedText style={styles.title}>Verify Email</ThemedText>
+            <ThemedText style={styles.subtitle}>Check your inbox for the code</ThemedText>
+            <TextInput style={styles.input} value={code} placeholder="000000" onChangeText={setCode} keyboardType="numeric" />
+            <Pressable style={styles.button} onPress={onVerifyPress}>
+              {verificationLoading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Verify</ThemedText>}
+            </Pressable>
+          </View>
+        </View>
+      </ImageBackground>
+    );
+  }
+
+    
+      
+
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
   return (
     <ImageBackground source={require('../../assets/images/bg.jpg')} style={styles.background}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.overlay}>

@@ -17,13 +17,22 @@ import {
 } from 'react-native';
 
 export default function GuestBillView() {
-  const { inviteCode, billId } = useLocalSearchParams();
+  const { inviteCode, billId, guestEmail } = useLocalSearchParams();
   const router = useRouter();
 
   const [bill, setBill] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [involved, setInvolved] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [guestInfo, setGuestInfo] = useState(null);
+  const [guestFirstName, setGuestFirstName] = useState('');
+  const [guestLastName, setGuestLastName] = useState('');
+  const [guestId, setGuestId] = useState('')
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [timeLeft, setTimeLeft] = useState("06:00:00");
+  const [accessLogId, setAccessLogId] = useState(null);
+  const [sessionStart, setSessionStart] = useState(null)
+  const [totalSecondsUsed, setTotalSecondsUsed] = useState(0);
 
   // Modal & Password States
   const [showSignUpModal, setShowSignUpModal] = useState(false);
@@ -33,7 +42,212 @@ export default function GuestBillView() {
 
   useEffect(() => {
     fetchGuestBillData();
-  }, [inviteCode]);
+    fetchGuestInfo();
+  }, [inviteCode, guestEmail, billId]);
+
+  useEffect(() => {
+    // Update the timer every second
+    const timer = setInterval(() => {
+      if (sessionStart && accessLogId && !accessDenied) {
+        updateTimeUsed();
+        setTimeLeft(getRemainingTime(sessionStart));
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [sessionStart, accessLogId, accessDenied]);
+
+  const fetchGuestInfo = async () => {
+  try {
+    // First, get the guest user info
+    const { data: guest, error: guestError } = await supabase
+      .from('guest_users')
+      .select('*')
+      .eq('email', guestEmail)
+      .single();
+
+    if (guestError) {
+      console.error("Error fetching guest:", guestError);
+      return;
+    }
+    
+    setGuestInfo(guest);
+    setGuestFirstName(guest.first_name);
+    setGuestLastName(guest.last_name);
+    setGuestId(guest.id);
+
+    // Check for today's access log
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    const { data: todayLog, error: logError } = await supabase
+      .from('guest_access_logs')
+      .select('*')
+      .eq('guest_id', guest.id)
+      .eq('bill_id', billId)
+      .eq('access_date', today)
+      .maybeSingle();
+
+    if (logError) {
+      console.error("Error fetching today's log:", logError);
+    }
+
+    if (todayLog) {
+      // Found an existing log for today
+      setAccessLogId(todayLog.id);
+      setTotalSecondsUsed(todayLog.total_seconds_used || 0);
+      
+      // Check total seconds used
+      if (todayLog.total_seconds_used >= 21600) {
+        setAccessDenied(true);
+        return;
+      }
+      
+      const lastStart = todayLog.last_access_start ? new Date(todayLog.last_access_start) : null;
+      
+      if (lastStart) {
+        // Calculate current session duration
+        const now = new Date();
+        const sessionSeconds = Math.floor((now - lastStart) / 1000);
+        const totalWithCurrent = todayLog.total_seconds_used + sessionSeconds;
+        
+        if (totalWithCurrent >= 21600) {
+          setAccessDenied(true);
+        } else {
+          setSessionStart(lastStart.toISOString());
+          setAccessDenied(false);
+        }
+      } else {
+        // Log exists but no active session - start a new one
+        await startNewSession(todayLog.id);
+      }
+    } else {
+      // No log for today - create a new one
+      await createNewAccessLog(guest.id);
+    }
+  } catch (err) {
+    console.error("Error in fetchGuestInfo:", err);
+    setAccessDenied(true);
+  }
+};
+
+  const createNewAccessLog = async (guestId) => {
+  try {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    // Don't include 'id' in the insert - let the database auto-generate it
+    const { data: newLog, error } = await supabase
+      .from('guest_access_logs')
+      .insert({
+        guest_id: guestId,
+        bill_id: billId,
+        access_date: today,
+        total_seconds_used: 0,
+        last_access_start: now.toISOString(),
+        // Remove 'id', 'created_at', and 'updated_at' - let database handle defaults
+        // created_at: now.toISOString(),  // Remove - has default now()
+        // updated_at: now.toISOString()   // Remove - has default now()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating access log:", error);
+      throw error;
+    }
+
+    setAccessLogId(newLog.id);
+    setSessionStart(now.toISOString());
+    setTotalSecondsUsed(0);
+    setAccessDenied(false);
+    
+  } catch (err) {
+    console.error("Error in createNewAccessLog:", err);
+    setAccessDenied(true);
+  }
+};
+
+const startNewSession = async (logId) => {
+  try {
+    const now = new Date();
+    
+    // Update the log with new session start time
+    const { error } = await supabase
+      .from('guest_access_logs')
+      .update({
+        last_access_start: now.toISOString(),
+        // Remove updated_at - let the trigger handle it
+        // updated_at: now.toISOString()
+      })
+      .eq('id', logId);
+
+    if (error) {
+      console.error("Error starting new session:", error);
+      throw error;
+    }
+
+    setSessionStart(now.toISOString());
+    setAccessDenied(false);
+    
+  } catch (err) {
+    console.error("Error starting new session:", err);
+  }
+};
+
+  const updateTimeUsed = async () => {
+  if (!sessionStart || !accessLogId || accessDenied) return;
+
+  try {
+    const now = new Date();
+    const start = new Date(sessionStart);
+    const sessionSeconds = Math.floor((now - start) / 1000);
+    
+    // Only update if we've accumulated at least 1 second
+    if (sessionSeconds > 0) {
+      const totalUsed = totalSecondsUsed + sessionSeconds;
+      
+      // Check if we've exceeded the limit
+      if (totalUsed >= 21600) {
+        setAccessDenied(true);
+      }
+
+      // Update the total in the database
+      const { error } = await supabase
+        .from('guest_access_logs')
+        .update({
+          total_seconds_used: totalUsed,
+          // Remove updated_at - let the trigger handle it
+          // updated_at: now.toISOString()
+        })
+        .eq('id', accessLogId);
+
+      if (error) {
+        console.error("Error updating time used:", error);
+      } else {
+        setTotalSecondsUsed(totalUsed);
+      }
+    }
+  } catch (err) {
+    console.error("Error in updateTimeUsed:", err);
+  }
+};
+
+  const getRemainingTime = (lastSessionStart) => {
+    if (!lastSessionStart) return "06:00:00";
+
+    const usedSeconds = totalSecondsUsed || 0;
+    const remainingSeconds = Math.max(0, 21600 - usedSeconds); // 6 hours = 21600 seconds
+    
+    if (remainingSeconds <= 0) {
+      return "00:00:00";
+    }
+
+    const hours = Math.floor(remainingSeconds / 3600);
+    const minutes = Math.floor((remainingSeconds % 3600) / 60);
+    const seconds = remainingSeconds % 60;
+
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   const fetchGuestBillData = async () => {
     if (!inviteCode) return;
@@ -83,6 +297,28 @@ export default function GuestBillView() {
     <View style={styles.center}><ActivityIndicator size="large" color="tomato" /></View>
   );
 
+if (accessDenied) {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="lock-closed" size={64} color="tomato" />
+        <ThemedText style={[styles.billNameLarge, { textAlign: 'center', marginTop: 20 }]}>
+          Daily Access Expired
+        </ThemedText>
+        <ThemedText style={{ textAlign: 'center', color: '#8E8E93', marginVertical: 15, paddingHorizontal: 40 }}>
+          Your 6-hour guest window for today has ended. Sign up now to get permanent access to this bill.
+        </ThemedText>
+        <TouchableOpacity 
+          style={styles.modernSubmitBtn} 
+          onPress={() => router.push({
+            pathname: '/(auth)/sign-up',
+            params: { gEmail: guestEmail } 
+          })}
+        >
+          <ThemedText style={styles.submitBtnText}>Create Account</ThemedText>
+        </TouchableOpacity>
+      </View>
+    );
+  }
   const totalBill = expenses.reduce((sum, exp) => sum + (Number(exp.cost) || 0), 0);
 
   return (
@@ -90,6 +326,15 @@ export default function GuestBillView() {
       {/* TOP BREADCRUMB BAR */}
       <View style={styles.topTitleBar}>
         <ThemedText style={styles.breadcrumb}>Guest Access / {bill?.name || 'Bill'}</ThemedText>
+        
+      </View>
+
+       {/* TIMER PILL */}
+      <View style={styles.timerContainer}>
+        <Ionicons name="time" size={16} color="tomato" />
+        <ThemedText style={styles.timerText}>
+          Access Expires in: <ThemedText style={styles.timerCountdown}>{timeLeft}</ThemedText>
+        </ThemedText>
       </View>
 
       {/* ACTION BAR */}
@@ -107,6 +352,8 @@ export default function GuestBillView() {
             <ThemedText style={styles.pillText}>{inviteCode}</ThemedText>
           </View>
         </View>
+
+       
       </View>
 
       {/* MAIN CONTENT AREA */}
@@ -179,8 +426,19 @@ export default function GuestBillView() {
             
             <View style={styles.spacer} />
 
+<<<<<<< HEAD
             <Pressable style={styles.modernSubmitBtn} onPress={() => setShowSignUpModal(true)}>
               <ThemedText style={styles.submitBtnText}>Create Your Account</ThemedText>
+=======
+            <Pressable 
+              style={styles.modernSubmitBtn} 
+              onPress={() => router.push({
+                pathname: '/(auth)/sign-up',
+                params: { gFName: guestFirstName, gLName: guestLastName, gEmail: guestEmail, gId: guestId, guest: guestInfo }
+              })}
+            >
+              <ThemedText style={styles.submitBtnText}>Sign Up</ThemedText>
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
             </Pressable>
           </View>
         )}
@@ -338,5 +596,34 @@ const styles = StyleSheet.create({
   passwordInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7', borderRadius: 16, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E5E5EA' },
   modalInput: { flex: 1, height: 55, fontSize: 16, color: '#1C1C1E' },
   modalActionBtn: { backgroundColor: 'tomato', padding: 18, borderRadius: 18, alignItems: 'center', shadowColor: 'tomato', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  modalActionText: { color: '#FFF', fontWeight: '800', fontSize: 16 }
+  modalActionText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  timerContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#FFF',
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: 20,
+  borderWidth: 1,
+  borderColor: '#F2F2F7',
+  alignSelf: 'flex-start',
+  marginBottom: 15,
+  // Shadow for a "floating" look
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.05,
+  shadowRadius: 5,
+  elevation: 2,
+},
+timerText: {
+  fontSize: 13,
+  color: '#8E8E93',
+  marginLeft: 6,
+  fontWeight: '600',
+},
+timerCountdown: {
+  color: 'tomato',
+  fontWeight: '800',
+  fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', // Monospace keeps numbers from jumping
+},
 });

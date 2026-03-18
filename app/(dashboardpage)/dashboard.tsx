@@ -25,6 +25,7 @@ const router = useRouter();
     const BILL_ADD_LIMIT = 5;
      const [showValidationModal, setShowValidationModal] = useState(false);
 const [validationMessage, setValidationMessage] = useState('');
+    const [showEmailExistsModal, setShowEmailExistsModal] = useState(false)
 
     const [errors, setErrors] = useState({});
 
@@ -69,16 +70,30 @@ const [validationMessage, setValidationMessage] = useState('');
     console.log(userRole)
     console.log("selected involved people: ", selectedInvolvedPeople);
 
-    const createBill = async () => {
-  if (!billName) { alert("Bill name required"); return; }
+ const createBill = async () => {
+  if (!billName) { 
+    alert("Bill name required"); 
+    return; 
+  }
+  
   if (validator.equals(userRole, 'Standard') && getBillEntries() >= BILL_ADD_LIMIT) { 
   setShowLimitModal(true);
   return;
 }
 
+  // Check if trying to add more than 3 people (Standard users)
+  if (validator.equals(userRole, 'Standard') && selectedInvolvedPeople.length > 3) {
+    alert('Standard users can only add up to 3 people per bill.');
+    return;
+  }
+
   const { data, error } = await supabase
     .from("bills")
-    .insert([{ name: billName, invite_code: inviteCode, created_by: user?.id }])
+    .insert([{ 
+      name: billName, 
+      invite_code: inviteCode, 
+      created_by: user?.id 
+    }])
     .select()
     .single();
 
@@ -89,18 +104,13 @@ const [validationMessage, setValidationMessage] = useState('');
 
   const billId = data.id;
 
-  // Only add selected members (NO automatic creator addition)
+  // Only add selected members
   if (selectedInvolvedPeople.length > 0) {
     const memberInserts = [];
 
     for (const person of selectedInvolvedPeople) {
       // Check if this is a registered user
-      // Fix: Check if person.id exists and is a string before using string methods
-      const isRegisteredUser = 
-        person.type === 'registered' || 
-        (person.uniqueKey && person.uniqueKey.startsWith('r-')) ||
-        (person.id && typeof person.id === 'string' && 
-         (person.id.includes('-') && person.id.length > 20));
+      const isRegisteredUser = person.type === 'registered';
 
       if (isRegisteredUser) {
         // REGISTERED USER
@@ -110,57 +120,12 @@ const [validationMessage, setValidationMessage] = useState('');
           guest_id: null
         });
       } else {
-        // GUEST USER
-        // Check if guest already exists by email
-                let guestId;
-        
-        if (person.uniqueKey && person.uniqueKey.startsWith('g-')) {
-          // Extract the numeric ID from "g-5" format
-          guestId = person.uniqueKey.replace('g-', '');
-        } else {
-          // Fallback to person.id
-          guestId = person.id;
-        }
-
-        // For guests from the selection modal, they already exist in guest_users
-        // So we just need to add them to bill_members
+        // GUEST USER - person.id should now be the actual guest_users.id
         memberInserts.push({
           bill_id: billId,
           user_id: null,
-          guest_id: guestId  // Use the extracted guest ID
+          guest_id: person.id  // This should be the database ID from guest_users
         });
-        //  else {
-        //   // Parse name for guest
-        //   let firstName = '';
-        //   let lastName = '';
-          
-        //   if (person.name) {
-        //     const nameParts = person.name.split(' ');
-        //     firstName = nameParts[0] || '';
-        //     lastName = nameParts.slice(1).join(' ') || '';
-        //   } else if (person.first_name) {
-        //     firstName = person.first_name;
-        //     lastName = person.last_name || '';
-        //   }
-
-        //   // Insert new guest
-        // //   const { data: guestData, error: guestError } = await supabase
-        // //     .from("guest_users")
-        // //     .insert({
-        // //       first_name: firstName,
-        // //       last_name: lastName,
-        // //       email: person.email
-        // //     })
-        // //     .select()
-        // //     .single();
-
-        // //   if (guestError) {
-        // //     console.error("Error creating guest:", guestError);
-        // //     continue;
-        // //   }
-          
-        //   guestId = guestData.id;
-        // }
       }
     }
 
@@ -252,42 +217,93 @@ const [validationMessage, setValidationMessage] = useState('');
         }
     }
 
-    const validateForm = () => {
-        let errors = {}
+   const validateForm = () => {
+  let errors = {};
 
-        console.log(guestFirst)
+  if (validator.isEmpty(guestFirst)) errors.guestFirst = "First name must not be empty";
+  if (!validator.isEmail(guestEmail)) errors.guestEmail = "Email must be in correct format.";
+  if (validator.isEmpty(guestEmail)) errors.guestEmail = "Email must not be empty.";
 
-        if(validator.isEmpty(guestFirst)) errors.guestFirst = "First name must not be empty";
-        if(validator.isEmpty(guestLast)) errors.guestLast = "Last name must not be empty";
-        if (!validator.isEmail(guestEmail)) errors.guestEmail = "Email must be a correct format.";
-        if (validator.isEmpty(guestEmail)) errors.guestEmpty = "Email must not be empty.";
+  setErrors(errors);
+  return Object.keys(errors).length === 0;
+};
 
-        setErrors(errors)
-        return Object.keys(errors).length === 0;
-    }
-
-    const handleAddGuestSubmit = () => {
+const handleAddGuestSubmit = async () => {
   if (!guestFirst || !guestEmail) {
     alert("First name and Email are required");
     return;
   }
-  
-  const newGuest = {
-    id: guestEmail, // Using email as temporary ID
-    name: `${guestFirst} ${guestLast}`.trim(),
-    first_name: guestFirst,
-    last_name: guestLast || '',
-    email: guestEmail,
-    type: 'guest', // Explicitly set type
-    uniqueKey: `g-${Date.now()}-${Math.random()}`
-  };
-  
-  setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
-  setGuestFirst(""); 
-  setGuestLast(""); 
-  setGuestEmail("");
-  setShowAddGuestModal(false);
-  setShowSelectPeopleModal(true);
+
+  if (!validator.isEmail(guestEmail)) {
+    alert("Please enter a valid email address");
+    return;
+  }
+
+  try {
+
+    // Check if guest email already exists
+    const { data: existingGuest, error: checkError } = await supabase
+      .from("guest_users")
+      .select("id, first_name, last_name, email")
+      .eq("email", guestEmail)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Error checking existing guest:", checkError);
+      alert("Error checking email availability");
+      return;
+    }
+
+    // If email already exists, show the error modal
+    if (existingGuest) {
+        setShowAddGuestModal(false);
+      setShowEmailExistsModal(true);
+      return;
+    }
+
+    // 1️⃣ Insert the guest into guest_users table
+    const { data: guestData, error: guestError } = await supabase
+      .from("guest_users")
+      .insert({
+        first_name: guestFirst,
+        last_name: guestLast || '',
+        email: guestEmail
+      })
+      .select()
+      .single();
+
+    if (guestError) {
+      console.error("Error creating guest:", guestError);
+      alert("Failed to create guest. Please try again.");
+      return;
+    }
+
+    // 2️⃣ Create the guest object for local state
+    const newGuest = {
+      id: guestData.id, // Use the actual database ID
+      name: `${guestFirst} ${guestLast}`.trim(),
+      first_name: guestFirst,
+      last_name: guestLast || '',
+      email: guestEmail,
+      type: 'guest',
+      uniqueKey: `g-${guestData.id}` // Use the database ID for the uniqueKey
+    };
+
+    // 3️⃣ Add to selected people
+    setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
+
+    // 4️⃣ Reset form and close modal
+    setGuestFirst(""); 
+    setGuestLast(""); 
+    setGuestEmail("");
+    setErrors({});
+    setShowAddGuestModal(false);
+    setShowSelectPeopleModal(true);
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    alert("An unexpected error occurred");
+  }
 };
 
     useEffect(() => { loadBills(); }, []);
@@ -320,6 +336,28 @@ const getDisplayName = (person) => {
             loadUsersFromSupabase("all");
             setLocalSelection(currentSelection);
         }
+
+          const transferGuestData = async (clerkUserId: any) => {
+            // 1. Update bill_members to replace guest_user_id with clerk_user_id
+            await supabase
+              .from('bill_members')
+              .update({ user_id: clerkUserId, guest_id: null })
+              .eq('guest_id', 18);
+        
+            // 2. Optionally, migrate other tables if guest had debts or expenses
+            await supabase
+              .from('expenses_involved')
+              .update({ bill_member_id: clerkUserId })  // adjust if needed
+              .eq('guest_id', 18);
+        
+            // 3. Delete guest_user row if no longer needed
+            await supabase
+              .from('guest_users')
+              .delete()
+              .eq('id', 18);
+          };
+        
+          transferGuestData(user?.id)
         }, [visible]);
 
         const loadUsersFromSupabase = async (currentFilter = "all") => {
@@ -693,31 +731,31 @@ const getDisplayName = (person) => {
         </Modal>
 
          {/* BILL LIMIT MODAL */}
-<Modal visible={showLimitModal} transparent animationType="fade">
-  <View style={styles.modalOverlay}>
-    <View style={styles.limitModalBox}>
+    <Modal visible={showLimitModal} transparent animationType="fade">
+    <View style={styles.modalOverlay}>
+        <View style={styles.limitModalBox}>
 
-      <Ionicons name="warning-outline" size={48} color="tomato" />
+        <Ionicons name="warning-outline" size={48} color="tomato" />
 
-      <ThemedText style={styles.limitTitle}>
-        Monthly Limit Reached
-      </ThemedText>
+        <ThemedText style={styles.limitTitle}>
+            Monthly Limit Reached
+        </ThemedText>
 
-      <ThemedText style={styles.limitMessage}>
-        You have reached the maximum number of bills allowed this month.
-      </ThemedText>
+        <ThemedText style={styles.limitMessage}>
+            You have reached the maximum number of bills allowed this month.
+        </ThemedText>
 
-      <Pressable
-        style={styles.limitBtn}
-        onPress={() => setShowLimitModal(false)}
-      >
-        <ThemedText style={styles.limitBtnText}>OK</ThemedText>
-      </Pressable>
-
+        <Pressable
+            style={styles.limitBtn}
+            onPress={() => setShowLimitModal(false)}
+        >
+            <ThemedText style={styles.limitBtnText}>OK</ThemedText>
+        </Pressable>
+        </View>
     </View>
-  </View>
+</Modal>
 
-</Modal>{/* PEOPLE LIMIT MODAL */}
+{/* PEOPLE LIMIT MODAL */}
 <Modal visible={showPeopleLimitModal} transparent animationType="fade">
   <View style={styles.modalOverlay}>
     <View style={styles.limitModalBox}>
@@ -739,6 +777,38 @@ const getDisplayName = (person) => {
         <ThemedText style={styles.limitBtnText}>OK</ThemedText>
       </Pressable>
 
+    </View>
+  </View>
+</Modal>
+
+{/* EMAIL EXISTS ERROR MODAL */}
+<Modal visible={showEmailExistsModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.limitModalBox}>
+      <Ionicons name="mail-outline" size={48} color="tomato" />
+      
+      <ThemedText style={styles.limitTitle}>
+        Email Already Exists
+      </ThemedText>
+      
+      <ThemedText style={styles.limitMessage}>
+        A guest with this email address is already registered in the system. 
+        Please use a different email or search for the existing guest.
+      </ThemedText>
+      
+      <View style={styles.emailModalButtonRow}>
+        <Pressable
+          style={[styles.limitBtn, styles.emailModalCancelBtn]}
+          onPress={() => {
+            setShowEmailExistsModal(false)
+            setShowAddGuestModal(true);
+          }}
+        >
+          <ThemedText style={[styles.limitBtnText, styles.emailModalCancelText]}>
+            Try Again
+          </ThemedText>
+        </Pressable>
+      </View>
     </View>
   </View>
 </Modal>
@@ -973,6 +1043,7 @@ limitBtnText: {
   fontWeight: '700',
   fontSize: 16
 },
+<<<<<<< HEAD
 emptyState: {
   flex: 1,
   justifyContent: 'center',
@@ -1007,4 +1078,27 @@ emptyBtnText: {
   color: '#fff',
   fontWeight: '700'
 },
+=======
+  emailModalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+    marginTop: 10,
+  },
+  
+  emailModalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+  },
+  
+  emailModalSearchBtn: {
+    flex: 1,
+    backgroundColor: 'tomato',
+  },
+  
+  emailModalCancelText: {
+    color: '#8E8E93',
+  },
+>>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
     });

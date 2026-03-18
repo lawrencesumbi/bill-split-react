@@ -1,3 +1,4 @@
+import { ErrorModal } from '@/components/error-modal';
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/utils/supabase';
 import { useUser } from '@clerk/clerk-expo';
@@ -26,8 +27,9 @@ export default function ViewBill() {
   const [searchQuery, setSearchQuery] = useState('');
 
 
-  const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
+  // const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [showEmailExistsModal, setShowEmailExistsModal] = useState(false)
   
   // Modal Visibility States
   const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([])
@@ -36,11 +38,15 @@ export default function ViewBill() {
   const [showCustomModal, setShowCustomModal] = useState(false); // For Custom Split
   const [showPaidByDropdown, setShowPaidByDropdown] = useState(false);
   const [showSelectPeopleModal, setShowSelectPeopleModal] = useState(false);
+
+  const [guestErrors, setGuestErrors] = useState({});
+  const [isAddingGuest, setIsAddingGuest] = useState(false);
   
   // Form states
   const [guestFirstName, setGuestFirstName] = useState('');
   const [guestLastName, setGuestLastName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+  const [showErrorModal, setShowErrorModal] = useState(false)
 
   const [expName, setExpName] = useState('');
   const [expCost, setExpCost] = useState('');
@@ -83,6 +89,118 @@ export default function ViewBill() {
     setShowGuestModal(true)
   }
 
+  const validateGuestForm = () => {
+  let errors = {};
+
+  if (!guestFirstName.trim()) {
+    errors.guestFirst = "First name must not be empty";
+  }
+  
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(guestEmail)) {
+    errors.guestEmail = "Email must be in correct format.";
+  }
+  
+  if (!guestEmail.trim()) {
+    errors.guestEmail = "Email must not be empty.";
+  }
+
+  setGuestErrors(errors);
+  return Object.keys(errors).length === 0;
+};
+
+const handleAddGuestToBill = async () => {
+  if (!validateGuestForm()) return;
+
+  setIsAddingGuest(true);
+
+  try {
+
+      // Check if guest email already exists
+        const { data: existingGuest, error: checkError } = await supabase
+          .from("guest_users")
+          .select("id, first_name, last_name, email")
+          .eq("email", guestEmail)
+          .maybeSingle();
+    
+        if (checkError) {
+          console.error("Error checking existing guest:", checkError);
+          alert("Error checking email availability");
+          return;
+        }
+    
+        // If email already exists, show the error modal
+        if (existingGuest) {
+          setShowGuestModal(false);
+          setShowEmailExistsModal(true);
+          return;
+        }
+    
+
+    // Insert the guest into guest_users table
+    const { data: guestData, error: guestError } = await supabase
+      .from("guest_users")
+      .insert({
+        first_name: guestFirstName,
+        last_name: guestLastName || '',
+        email: guestEmail
+      })
+      .select()
+      .single();
+
+    if (guestError) {
+      console.error("Error creating guest:", guestError);
+      Alert.alert("Error", "Failed to create guest. Please try again.");
+      return;
+    }
+
+    // Add the guest to bill_members
+    const { error: memberError } = await supabase
+      .from("bill_members")
+      .insert({
+        bill_id: billId,
+        user_id: null,
+        guest_id: guestData.id
+      });
+
+    if (memberError) {
+      console.error("Error adding guest to bill:", memberError);
+      Alert.alert("Error", "Failed to add guest to bill");
+      return;
+    }
+
+    // Create guest object for local state if needed
+    const newGuest = {
+      id: guestData.id,
+      firstName: guestFirstName,
+      lastName: guestLastName || '',
+      email: guestEmail
+    };
+
+    // Optional: Add to local guests state
+    setGuests(prev => [...prev, newGuest]);
+
+    // Refresh the involved people list
+    await loadInvolved();
+
+    // Reset form and close modal
+    setGuestFirstName('');
+    setGuestLastName('');
+    setGuestEmail('');
+    setGuestErrors({});
+    setShowGuestModal(false);
+    setShowSelectPeopleModal(true);
+
+    Alert.alert("Success", "Guest added to bill successfully");
+
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    Alert.alert("Error", "An unexpected error occurred");
+  } finally {
+    setIsAddingGuest(false);
+  }
+};
+
   const handleViewExpense = async (exp: any) => {
     setViewingExpense(exp);
 
@@ -105,7 +223,88 @@ export default function ViewBill() {
     setShowViewExpenseModal(true);
   };
 
-  const handleEditExpense = async (exp: any) => {
+ const handleUpdateExpense = async () => {
+  if (!editingExpenseId) return;
+
+  try {
+    const totalCost = parseFloat(expCost);
+    
+    // Update the expense
+    const { error: expenseError } = await supabase
+      .from("expenses")
+      .update({
+        name: expName,
+        cost: totalCost,
+        paid_by: expPaidBy
+      })
+      .eq("id", editingExpenseId);
+
+    if (expenseError) throw expenseError;
+
+    // Delete existing involved records
+    const { error: deleteError } = await supabase
+      .from("expenses_involved")
+      .delete()
+      .eq("expenses_id", editingExpenseId);
+
+    if (deleteError) throw deleteError;
+
+    // Calculate amounts based on split type
+    let finalInvolved = [];
+    
+    if (splitType === 'equal') {
+      // EQUAL DIVISION: Everyone pays the same amount
+      const equalAmount = totalCost / selectedInvolved.length;
+      finalInvolved = selectedInvolved.map(id => ({
+        expenses_id: editingExpenseId,
+        bill_member_id: id,
+        amount_spent: equalAmount
+      }));
+    } else {
+      // CUSTOM DIVISION: Use the custom amounts from state
+      finalInvolved = selectedInvolved.map(id => ({
+        expenses_id: editingExpenseId,
+        bill_member_id: id,
+        amount_spent: parseFloat(customAmounts[id] || 0)
+      }));
+      
+      // Validate that custom amounts sum to total cost
+      const totalAllocated = finalInvolved.reduce((sum, item) => sum + item.amount_spent, 0);
+      if (Math.abs(totalAllocated - totalCost) > 0.01) {
+        Alert.alert("Error", "Custom amounts must equal the total cost");
+        return;
+      }
+    }
+
+    const { error: involvedError } = await supabase
+      .from("expenses_involved")
+      .insert(finalInvolved);
+
+    if (involvedError) throw involvedError;
+
+    Alert.alert("Success", "Expense updated successfully");
+
+    // Reset form and close modal
+    setShowExpenseModal(false);
+    setIsEditing(false);
+    setEditingExpenseId(null);
+    setExpName('');
+    setExpCost('');
+    setSelectedInvolved([]);
+    setCustomAmounts({});
+    setSplitType('equal');
+
+    // Refresh expenses
+    fetchExpenses();
+
+  } catch (err) {
+    console.error(err);
+    Alert.alert("Error", "Failed to update expense");
+  }
+};
+
+// Also update your handleEditExpense to properly set the split type
+const handleEditExpense = async (exp: any) => {
   setIsEditing(true);
   setEditingExpenseId(exp.id);
 
@@ -123,47 +322,63 @@ export default function ViewBill() {
     // store selected ids
     const selectedIds = data.map(i => i.bill_member_id);
     setSelectedInvolved(selectedIds);
-    if(selectedInvolved.length >= 2) {
-      setSplitType('custom')
+    
+    // Check if this was equally divided or custom
+    const totalCost = parseFloat(exp.cost);
+    const amounts = data.map(i => i.amount_spent);
+    
+    // Check if all amounts are equal (within a small margin of error)
+    const allEqual = amounts.every(amount => 
+      Math.abs(amount - amounts[0]) < 0.01
+    );
+    
+    if (allEqual && selectedIds.length > 1) {
+      // If all amounts are equal, set to equal split
+      setSplitType('equal');
+      // Clear custom amounts since we're using equal
+      setCustomAmounts({});
+    } else {
+      // Otherwise, it's a custom split
+      setSplitType('custom');
+      // Store the custom amounts
+      const amountsMap = {};
+      data.forEach(i => {
+        amountsMap[i.bill_member_id] = i.amount_spent.toString();
+      });
+      setCustomAmounts(amountsMap);
     }
-
-    // store custom amounts
-    const amounts = {};
-    data.forEach(i => {
-      amounts[i.bill_member_id] = i.amount_spent.toString();
-    });
-
-    setCustomAmounts(amounts);
   }
 
   setShowExpenseModal(true);
 };
 
-  const handleUpdateExpense = async () => {
-  if (!editingExpenseId) return;
-
-  try {
-    const { error } = await supabase
-      .from("expenses")
-      .update({
-        name: expName,
-        cost: parseFloat(expCost),
-        paid_by: expPaidBy
-      })
-      .eq("id", editingExpenseId);
-
-    if (error) throw error;
-
-    Alert.alert("Success", "Expense updated");
-
-    setShowEditExpenseModal(false);
-    setEditingExpenseId(null);
-
-    fetchExpenses();
-
-  } catch (err) {
-    console.error(err);
-    Alert.alert("Error", "Failed to update expense");
+// Add a function to handle split type toggle during editing
+const handleSplitTypeChange = (type: string) => {
+  setSplitType(type);
+  
+  if (type === 'equal' && selectedInvolved.length > 0) {
+    // When switching to equal, clear custom amounts
+    setCustomAmounts({});
+    
+    // Optional: Show an alert to confirm
+    Alert.alert(
+      "Equal Split",
+      "This will divide the expense equally among all selected people.",
+      [{ text: "OK" }]
+    );
+  } else if (type === 'custom') {
+    // When switching to custom, initialize custom amounts with equal values
+    const totalCost = parseFloat(expCost || '0');
+    const equalAmount = totalCost / selectedInvolved.length;
+    
+    const initialAmounts = {};
+    selectedInvolved.forEach(id => {
+      initialAmounts[id] = equalAmount.toString();
+    });
+    setCustomAmounts(initialAmounts);
+    
+    // Open custom modal
+    setShowCustomModal(true);
   }
 };
 
@@ -367,7 +582,7 @@ export default function ViewBill() {
   const remaining = parseFloat(expCost || '0') - totalAllocated;
 
 // --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
-    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress, billId, loadInvolved }) => {
+    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress, billId, loadInvolved, involvedPeople }) => {
         const [loading, setLoading] = useState(true);
         const [allPotentialUsers, setAllPotentialUsers] = useState([]); // Master list
         const [displayUsers, setDisplayUsers] = useState([]); // Filtered list
@@ -375,15 +590,18 @@ export default function ViewBill() {
         const [filter, setFilter] = useState('all'); // all, registered, guest
         
         // Tracks selections within this modal session before confirmation
-        const [localSelection, setLocalSelection] = useState(currentSelection);
+        const [localSelection, setLocalSelection] = useState([]);
 
-        useEffect(() => {
-        if (visible) {
-            console.log("visible true")
-            loadUsersFromSupabase("all");
-            setLocalSelection(currentSelection);
-        }
-        }, [visible]);
+
+       useEffect(() => {
+  if (visible) {
+    console.log("visible true");
+    loadUsersFromSupabase("all");
+    setLocalSelection([]); // This sets initial selection from parent
+    setSearchQuery(""); // Reset search when modal opens
+    setFilter("all"); // Reset filter when modal opens
+  }
+}, [visible]);
 
         console.log("local selection:", localSelection, visible)
 
@@ -499,11 +717,25 @@ export default function ViewBill() {
         }
         };
 
-        const handleConfirm = () => {
-        onConfirm(localSelection); // Pass local choices up to parent
-        insertSelectedPeople(localSelection);
-        onClose();
-        };
+      const handleConfirm = async () => {
+  // First, insert the selected people
+  await insertSelectedPeople(localSelection);
+  
+  // Then pass the selection to parent (if needed)
+  onConfirm(localSelection);
+  
+  // Reset local selection state
+  setLocalSelection([]);
+  
+  // Clear search query
+  setSearchQuery("");
+  
+  // Reset filter to default
+  setFilter("all");
+  
+  // Close the modal
+  onClose();
+};
 
         const FilterBadge = () => {
         let label = 'All';
@@ -518,61 +750,66 @@ export default function ViewBill() {
         );
         };
 
-        const insertSelectedPeople = async (peopleToInsert) => {
-  if (peopleToInsert.length === 0) return;
+      const insertSelectedPeople = async (peopleToInsert) => {
+        if (peopleToInsert.length === 0) return;
+        if(involved.length + peopleToInsert.length >= 4) {
+          setShowErrorModal(true)
+           return;
+          }
 
-  const memberInserts = [];
+      const memberInserts = [];
 
-  for (const person of peopleToInsert) {
-    // Check if this is a registered user
-    const isRegisteredUser = 
-      person.type === 'registered' || 
-      (person.uniqueKey && person.uniqueKey.startsWith('r-'));
+      for (const person of peopleToInsert) {
+        // Check if this is a registered user
+        const isRegisteredUser = 
+          person.type === 'registered' || 
+          (person.uniqueKey && person.uniqueKey.startsWith('r-'));
 
-    if (isRegisteredUser) {
-      // REGISTERED USER
-      memberInserts.push({
-        bill_id: billId,
-        user_id: person.id,
-        guest_id: null
-      });
-    } else {
-      // GUEST USER - extract ID from uniqueKey
-      let guestId;
-      
-      if (person.uniqueKey && person.uniqueKey.startsWith('g-')) {
-        guestId = person.uniqueKey.replace('g-', '');
-      } else {
-        guestId = person.id;
+        if (isRegisteredUser) {
+          // REGISTERED USER
+          memberInserts.push({
+            bill_id: billId,
+            user_id: person.id,
+            guest_id: null
+          });
+        } else {
+          // GUEST USER - extract ID from uniqueKey
+          let guestId;
+          
+          if (person.uniqueKey && person.uniqueKey.startsWith('g-')) {
+            guestId = person.uniqueKey.replace('g-', '');
+          } else {
+            guestId = person.id;
+          }
+
+          memberInserts.push({
+            bill_id: billId,
+            user_id: null,
+            guest_id: guestId
+          });
+        }
       }
 
-      memberInserts.push({
-        bill_id: billId,
-        user_id: null,
-        guest_id: guestId
-      });
-    }
-  }
+      // Insert all selected members
+      if (memberInserts.length > 0) {
+        const { error: membersError } = await supabase
+          .from("bill_members")
+          .insert(memberInserts);
 
-  // Insert all selected members
-  if (memberInserts.length > 0) {
-    const { error: membersError } = await supabase
-      .from("bill_members")
-      .insert(memberInserts);
+        if (membersError) {
+          console.error("Error inserting members:", membersError);
+          alert("Error adding members to bill");
+          return false; // Return false to indicate failure
+        }
+      }
 
-    if (membersError) {
-      console.error("Error inserting members:", membersError);
-      alert("Error adding members to bill");
-      return;
-    }
-  }
-
-  // Refresh the involved people list
-  if (typeof loadInvolved === 'function') {
-    loadInvolved();
-  }
+      // Refresh the involved people list
+      if (typeof loadInvolved === 'function') {
+        await loadInvolved();
+      }
+  
+  return true; // Return true to indicate success
 };
-        
 
         return (
         <Modal visible={visible} transparent animationType="slide">
@@ -830,6 +1067,37 @@ export default function ViewBill() {
       </View>
 
 
+{/* EMAIL EXISTS ERROR MODAL */}
+<Modal visible={showEmailExistsModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <View style={styles.limitModalBox}>
+      <Ionicons name="mail-outline" size={48} color="tomato" />
+      
+      <ThemedText style={styles.limitTitle}>
+        Email Already Exists
+      </ThemedText>
+      
+      <ThemedText style={styles.limitMessage}>
+        A guest with this email address is already registered in the system. 
+        Please use a different email or search for the existing guest.
+      </ThemedText>
+      
+      <View style={styles.emailModalButtonRow}>
+        <Pressable
+          style={[styles.limitBtn, styles.emailModalCancelBtn]}
+          onPress={() => {
+            setShowEmailExistsModal(false)
+            setShowGuestModal(true);
+          }}
+        >
+          <ThemedText style={[styles.limitBtnText, styles.emailModalCancelText]}>
+            Try Again
+          </ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  </View>
+</Modal>
 
       {/* ADD EXPENSE MODAL */}
       <Modal visible={showExpenseModal} transparent animationType="fade">
@@ -884,7 +1152,7 @@ export default function ViewBill() {
             <View style={styles.toggleContainer}>
               <Pressable 
                 style={[styles.toggleBtn, splitType === 'equal' && styles.toggleBtnActive]} 
-                onPress={() => setSplitType('equal')}
+                onPress={() => handleSplitTypeChange('equal')}
               >
                 <ThemedText style={[styles.toggleBtnText, splitType === 'equal' && styles.toggleBtnTextActive]}>
                   Equally Divided
@@ -896,7 +1164,7 @@ export default function ViewBill() {
               <Pressable 
                 style={[styles.toggleBtn, splitType === 'custom' && styles.toggleBtnActive]} 
                 onPress={() => {
-                  setSplitType('custom');
+                  handleSplitTypeChange('custom');
                   setShowCustomModal(true);
                 }}
               >
@@ -915,7 +1183,7 @@ export default function ViewBill() {
         </View>
       </Modal>
 
-      {/* EDIT EXPENSE MODAL */}
+{/*
 <Modal visible={showEditExpenseModal} transparent animationType="fade">
   <View style={styles.modalOverlay}>
     <View style={styles.modernModalBox}>
@@ -946,7 +1214,6 @@ export default function ViewBill() {
         />
       </View>
 
-      {/* Paid by dropdown */}
       <View style={styles.inputWrapper}>
         <ThemedText style={styles.inputLabel}>Paid by</ThemedText>
 
@@ -983,6 +1250,7 @@ export default function ViewBill() {
     </View>
   </View>
 </Modal>
+*/}
 
 {/* VIEW EXPENSE MODAL */}
 <Modal visible={showViewExpenseModal} transparent animationType="fade">
@@ -1103,47 +1371,105 @@ export default function ViewBill() {
       </Modal>
 
       {/* ... ADD GUEST MODAL remains same ... */}
-      <Modal visible={showGuestModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modernModalBox}>
-            <View style={styles.modalHeader}>
-              <ThemedText style={styles.modalTitle}>Add Person</ThemedText>
-              <Pressable style={styles.closeBtn} onPress={() => setShowGuestModal(false)}>
-                <ThemedText style={{fontWeight: '700'}}>Cancel</ThemedText>
-              </Pressable>
-            </View>
+     <Modal visible={showGuestModal} transparent animationType="fade">
+  <View style={styles.modalOverlay}>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+      style={styles.modernModalBox}
+    >
+      <View style={styles.modalHeader}>
+        <ThemedText style={styles.modalTitle}>Add Guest to Bill</ThemedText>
+        <Pressable 
+          style={styles.closeBtn} 
+          onPress={() => {
+            setGuestFirstName('');
+            setGuestLastName('');
+            setGuestEmail('');
+            setGuestErrors({});
+            setShowGuestModal(false);
+            setShowSelectPeopleModal(true);
+          }}
+        >
+          <ThemedText style={{fontWeight: '700'}}>Cancel</ThemedText>
+        </Pressable>
+      </View>
 
-            <View style={styles.inputWrapper}>
-              <ThemedText style={styles.inputLabel}>First Name</ThemedText>
-              <TextInput style={styles.modernInput} value={guestFirstName} onChangeText={setGuestFirstName} placeholder="" />
-            </View>
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>First Name *</ThemedText>
+        <TextInput 
+          style={[styles.modernInput, guestErrors.guestFirst && styles.inputError]} 
+          value={guestFirstName} 
+          onChangeText={setGuestFirstName} 
+          placeholder="Enter first name"
+          editable={!isAddingGuest}
+        />
+        {guestErrors.guestFirst && (
+          <ThemedText style={styles.errorText}>{guestErrors.guestFirst}</ThemedText>
+        )}
+      </View>
 
-            <View style={styles.inputWrapper}>
-              <ThemedText style={styles.inputLabel}>Last Name (Optional)</ThemedText>
-              <TextInput style={styles.modernInput} value={guestLastName} onChangeText={setGuestLastName} placeholder="" />
-            </View>
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Last Name (Optional)</ThemedText>
+        <TextInput 
+          style={styles.modernInput} 
+          value={guestLastName} 
+          onChangeText={setGuestLastName} 
+          placeholder="Enter last name"
+          editable={!isAddingGuest}
+        />
+      </View>
 
-            <View style={styles.inputWrapper}>
-              <ThemedText style={styles.inputLabel}>Email Address</ThemedText>
-              <TextInput style={styles.modernInput} value={guestEmail} onChangeText={setGuestEmail} keyboardType="email-address" placeholder="" autoCapitalize="none" />
-            </View>
+      <View style={styles.inputWrapper}>
+        <ThemedText style={styles.inputLabel}>Email Address *</ThemedText>
+        <TextInput 
+          style={[styles.modernInput, guestErrors.guestEmail && styles.inputError]} 
+          value={guestEmail} 
+          onChangeText={setGuestEmail} 
+          keyboardType="email-address" 
+          placeholder="Enter email address"
+          autoCapitalize="none"
+          editable={!isAddingGuest}
+        />
+        {guestErrors.guestEmail && (
+          <ThemedText style={styles.errorText}>{guestErrors.guestEmail}</ThemedText>
+        )}
+      </View>
 
-            <Pressable style={[styles.modernSubmitBtn, {marginTop: 10}]} onPress={handleAddGuest}>
-              <ThemedText style={styles.submitBtnText}>Add to Bill</ThemedText>
-            </Pressable>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+      <Pressable 
+        style={[styles.modernSubmitBtn, isAddingGuest && styles.disabledBtn]} 
+        onPress={handleAddGuestToBill}
+        disabled={isAddingGuest}
+      >
+        <ThemedText style={styles.submitBtnText}>
+          {isAddingGuest ? 'Adding...' : 'Add to Bill'}
+        </ThemedText>
+      </Pressable>
+    </KeyboardAvoidingView>
+  </View>
+</Modal>
               <SelectPeopleModal 
             visible={showSelectPeopleModal} 
-            onClose={() => setShowSelectPeopleModal(false)}
+            onClose={() => {
+              setShowSelectPeopleModal(false)
+              setSelectedInvolvedPeople([])
+            }}
             onConfirm={(people) => setSelectedInvolvedPeople(people)}
             currentSelection={selectedInvolvedPeople}
             onAddGuestPress={openGuestModal}
             billId={billId}
             loadInvolved={loadInvolved}
+            involvedPeople={involved}
         />
+
+    <ErrorModal
+      visible={showErrorModal}
+      onClose={() => setShowErrorModal(false)}
+      title="Error Adding People"
+      message="You have exceeded the maximum amount of people that you can add: 3"
+    />
+
     </View>
+
   );
 }
 
@@ -1260,6 +1586,28 @@ const styles = StyleSheet.create({
   toggleBtnTextActive: {
     color: 'tomato', // Matches your checkbox color
   },
+  emailModalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+    marginTop: 10,
+  },
+  
+  emailModalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+  },
+  
+  emailModalSearchBtn: {
+    flex: 1,
+    backgroundColor: 'tomato',
+  },
+  
+  emailModalCancelText: {
+    color: '#8E8E93',
+  },
+
    wireframeFilterBtn: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1385,6 +1733,19 @@ totalIcon: {
   justifyContent: 'center',
   alignItems: 'center',
 },
+inputError: {
+  borderWidth: 1,
+  borderColor: 'tomato'
+},
+errorText: {
+  color: 'tomato',
+  fontSize: 12,
+  marginTop: 4,
+  marginLeft: 4
+},
+disabledBtn: {
+  opacity: 0.5
+},
 personCard: {
   flexDirection: 'row',
   alignItems: 'center',
@@ -1395,7 +1756,41 @@ personCard: {
   borderWidth: 1,
   borderColor: '#F2F2F7'
 },
+ limitModalBox: {
+  width: 320,
+  backgroundColor: '#fff',
+  borderRadius: 22,
+  padding: 25,
+  alignItems: 'center'
+},
 
+limitTitle: {
+  fontSize: 20,
+  fontWeight: '800',
+  marginTop: 10,
+  color: '#1C1C1E'
+},
+
+limitMessage: {
+  fontSize: 14,
+  color: '#8E8E93',
+  textAlign: 'center',
+  marginTop: 8,
+  marginBottom: 20
+},
+
+limitBtn: {
+  backgroundColor: 'tomato',
+  paddingVertical: 10,
+  paddingHorizontal: 30,
+  borderRadius: 12
+},
+
+limitBtnText: {
+  color: '#fff',
+  fontWeight: '700',
+  fontSize: 16
+},
 avatarCircle: {
   width: 36,
   height: 36,
