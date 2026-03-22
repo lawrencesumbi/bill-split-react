@@ -139,39 +139,73 @@ export default function Page() {
   };
 
   const onSignUpPress = async () => {
-    if (!isLoaded || !validateForm()) return;
-    setSignupLoading(true);
-    setClerkErrors({});
-    try {
-      await signUp.create({ firstName, lastName, username, emailAddress, password });
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      setPendingVerification(true);
-    } catch (err: any) {
-      setClerkErrors(err);
-    } finally {
-      setSignupLoading(false);
-    }
-  };
+  if (!validateForm()) return;
+  setSignupLoading(true);
+
+  try {
+    // 1. Create the user in Supabase Auth
+    const { data, error } = await supabase.auth.signUp({
+      email: emailAddress,
+      password: password,
+      options: {
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          username: username,
+          nickname: nickname,
+        }
+      }
+    });
+
+    if (error) throw error;
+
+    // 2. If Supabase is set to 'Confirm Email', show the verification box
+    setPendingVerification(true);
+    alert("Check your email for the verification code!");
+    
+  } catch (err: any) {
+    alert(err.message);
+  } finally {
+    setSignupLoading(false);
+  }
+};
 
   const onVerifyPress = async () => {
-    if (!isLoaded) return;
-    setVerificationLoading(true);
-    try {
-      const attempt = await signUp.attemptEmailAddressVerification({ code });
-      if (attempt.status === 'complete') {
-        const clerkUserId = attempt.createdUserId
-        await supabase.from('clerk_users').insert({ clerk_user_id: clerkUserId, nickname });
-        await supabase.from('user_has_roles').insert({ clerk_user_id: attempt.createdUserId });
-        await transferGuestData(Number(gId), clerkUserId);
-        await setActive({ session: attempt.createdSessionId });
-        router.replace('/');
+  setVerificationLoading(true);
+  try {
+    const { data: { session }, error } = await supabase.auth.verifyOtp({
+      email: emailAddress,
+      token: code,
+      type: 'signup',
+    });
+
+    if (error) throw error;
+
+    if (session) {
+      // NOW: Insert the extra details into your NEW public.users table
+      const { error: profileError } = await supabase
+        .from('users')
+        .insert({
+          id: session.user.id, // The ID from the Auth session
+          first_name: firstName,
+          last_name: lastName,
+          username: username,
+          nickname: nickname,
+          email: emailAddress,
+        });
+
+      if (profileError) {
+        console.error("Profile creation error:", profileError.message);
       }
-    } catch (err: any) {
-      setClerkErrors(err);
-    } finally {
-      setVerificationLoading(false);
+
+      router.replace('/(dashboardpage)/dashboard');
     }
-  };
+  } catch (err: any) {
+    alert(err.message);
+  } finally {
+    setVerificationLoading(false);
+  }
+};
 
   if (pendingVerification) {
     return (

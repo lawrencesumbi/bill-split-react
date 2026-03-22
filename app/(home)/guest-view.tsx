@@ -426,10 +426,6 @@ if (accessDenied) {
             
             <View style={styles.spacer} />
 
-<<<<<<< HEAD
-            <Pressable style={styles.modernSubmitBtn} onPress={() => setShowSignUpModal(true)}>
-              <ThemedText style={styles.submitBtnText}>Create Your Account</ThemedText>
-=======
             <Pressable 
               style={styles.modernSubmitBtn} 
               onPress={() => router.push({
@@ -438,7 +434,6 @@ if (accessDenied) {
               })}
             >
               <ThemedText style={styles.submitBtnText}>Sign Up</ThemedText>
->>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
             </Pressable>
           </View>
         )}

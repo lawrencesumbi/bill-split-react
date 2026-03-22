@@ -1043,42 +1043,6 @@ limitBtnText: {
   fontWeight: '700',
   fontSize: 16
 },
-<<<<<<< HEAD
-emptyState: {
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginTop: 80,
-},
-
-emptyTitle: {
-  fontSize: 18,
-  fontWeight: '700',
-  color: '#8E8E93',
-  marginTop: 10,
-},
-
-emptySubtitle: {
-  fontSize: 13,
-  color: '#C7C7CC',
-  marginTop: 5,
-  textAlign: 'center',
-  paddingHorizontal: 40,
-},
-
-emptyBtn: {
-  marginTop: 15,
-  backgroundColor: 'tomato',
-  paddingVertical: 10,
-  paddingHorizontal: 20,
-  borderRadius: 10
-},
-
-emptyBtnText: {
-  color: '#fff',
-  fontWeight: '700'
-},
-=======
   emailModalButtonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1100,5 +1064,4 @@ emptyBtnText: {
   emailModalCancelText: {
     color: '#8E8E93',
   },
->>>>>>> f9eb0463061c26231664425e7086cf53d4aeaf9f
     });
