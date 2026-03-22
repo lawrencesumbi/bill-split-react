@@ -1,9 +1,10 @@
-import { useSignIn } from '@clerk/clerk-expo';
+import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ImageBackground,
   KeyboardAvoidingView,
   Modal,
@@ -18,7 +19,6 @@ import {
 import validator from 'validator';
 
 export default function ForgotPassword() {
-  const { signIn, setActive, isLoaded } = useSignIn();
   const router = useRouter();
 
   // --- States ---
@@ -34,48 +34,58 @@ export default function ForgotPassword() {
 
   const [errors, setErrors] = React.useState({} as any);
   const [loading, setLoading] = React.useState(false);
-  const [clerkErrors, setClerkErrors] = React.useState(Object);
-
-  let messages = clerkErrors.errors || [];
 
   // --- Actions ---
   
-  // 1. Request Code
+  // 1. Request Code (Supabase sends a reset email)
   const onRequestReset = async () => {
-    if (!isLoaded) return;
     let errs = {} as any;
     if (!validator.isEmail(email)) errs.email = "Please enter a valid email";
     if (Object.keys(errs).length > 0) return setErrors(errs);
 
     setLoading(true);
+    setErrors({});
     try {
-      await signIn!.create({
-        strategy: 'reset_password_email_code',
-        identifier: email,
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      if (error) throw error;
+      
       setShowSentModal(true);
     } catch (err: any) {
-      setClerkErrors(err);
+      Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Verify Code only (We use a dummy password to "check" the code via Clerk or just handle locally)
-  // Note: Clerk usually does attemptFirstFactor with code AND password at once. 
-  // To keep your requested UI flow, we transition to Password stage after code is filled.
-  const onCodeSubmit = () => {
+  // 2. Verify Code
+  const onCodeSubmit = async () => {
     if (code.length < 6) {
       setErrors({ code: "Enter the full 6-digit code" });
       return;
     }
-    setErrors({});
-    setShowVerifiedModal(true);
+
+    setLoading(true);
+    try {
+      // We verify the OTP for the 'recovery' type
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'recovery',
+      });
+
+      if (error) throw error;
+
+      setErrors({});
+      setShowVerifiedModal(true);
+    } catch (err: any) {
+      Alert.alert("Verification Failed", err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // 3. Final Reset
+  // 3. Final Reset (Update User Password)
   const onResetSubmit = async () => {
-    if (!isLoaded) return;
     let errs = {} as any;
     if (password.length < 8) errs.password = "Min 8 characters required";
     if (password !== confirmPassword) errs.confirm = "Passwords do not match";
@@ -83,17 +93,17 @@ export default function ForgotPassword() {
 
     setLoading(true);
     try {
-      const result = await signIn!.attemptFirstFactor({
-        strategy: 'reset_password_email_code',
-        code,
-        password,
+      const { error } = await supabase.auth.updateUser({
+        password: password
       });
-      if (result.status === 'complete') {
-        await setActive!({ session: result.createdSessionId });
-        router.replace('/');
-      }
+
+      if (error) throw error;
+
+      Alert.alert("Success", "Password updated successfully!", [
+        { text: "Login", onPress: () => router.replace('/(auth)/sign-in') }
+      ]);
     } catch (err: any) {
-      setClerkErrors(err);
+      Alert.alert("Update Error", err.message);
     } finally {
       setLoading(false);
     }
@@ -175,18 +185,17 @@ export default function ForgotPassword() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Verification Code</Text>
                   <TextInput 
-                    style={[styles.input, (errors.code || messages.length > 0) && styles.inputError]} 
-                    placeholder="" 
+                    style={[styles.input, errors.code && styles.inputError]} 
+                    placeholder="000000" 
                     keyboardType="numeric"
                     maxLength={6}
                     value={code}
                     onChangeText={setCode}
                   />
                   {errors.code && <Text style={styles.errorText}>{errors.code}</Text>}
-                  {messages.map((m: any, i: number) => <Text key={i} style={styles.errorText}>{m.longMessage}</Text>)}
                 </View>
                 <Pressable style={styles.primaryButton} onPress={onCodeSubmit}>
-                  <Text style={styles.buttonText}>Verify Code</Text>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify Code</Text>}
                 </Pressable>
               </View>
             )}
@@ -219,6 +228,8 @@ export default function ForgotPassword() {
     </View>
   );
 }
+
+// ... styles remain the same ...
 
 const styles = StyleSheet.create({
   mainContainer: { flex: 1 },

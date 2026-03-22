@@ -1,7 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/utils/supabase';
-import { useSignUp } from '@clerk/clerk-expo';
-import { Ionicons } from '@expo/vector-icons'; // Added for the back icon
+
+import { Ionicons } from '@expo/vector-icons';
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import * as React from 'react';
 import {
@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import validator from 'validator';
 
-// 1. FIXED: Moved InputField OUTSIDE the main component so it doesn't unmount on every keystroke
 const InputField = ({ label, value, onChange, error, secure = false, autoCap = "none" as any, keyboard = "default" as any, style = {} }) => {
   const [isPasswordVisible, setIsPasswordVisible] = React.useState(false);
   const isPasswordField = secure;
@@ -31,7 +30,7 @@ const InputField = ({ label, value, onChange, error, secure = false, autoCap = "
           style={[styles.input, error && styles.inputError, isPasswordField && { paddingRight: 50 }]}
           value={value}
           onChangeText={onChange}
-          placeholder="" // Removed all placeholders
+          placeholder="" 
           placeholderTextColor="#C7C7CC"
           secureTextEntry={isPasswordField && !isPasswordVisible}
           autoCapitalize={autoCap}
@@ -63,9 +62,8 @@ const InputField = ({ label, value, onChange, error, secure = false, autoCap = "
 };
 
 export default function Page() {
-  const { isLoaded, signUp, setActive } = useSignUp();
   const router = useRouter();
-  const { gFName, gLName, gEmail, gId, guest } = useLocalSearchParams();
+  const { gFName, gLName, gEmail, gId } = useLocalSearchParams();
 
   // States
   const [firstName, setFirstName] = React.useState(gFName ?? '');
@@ -81,35 +79,33 @@ export default function Page() {
   const [verificationLoading, setVerificationLoading] = React.useState(false);
   const [code, setCode] = React.useState('');
   const [errors, setErrors] = React.useState<Record<string, string>>({});
-  const [clerkErrors, setClerkErrors] = React.useState<any>(Object);
   const [users, setUsers] = React.useState<any[]>([]);
   const [signupLoading, setSignupLoading] = React.useState(false);
-
 
   React.useEffect(() => {
     const getUsers = async () => {
       try {
-        const { data: clerk_users } = await supabase.from('clerk_users').select('nickname');
-        if (clerk_users) setUsers(clerk_users);
+        const { data: existing_users } = await supabase.from('users').select('nickname');
+        if (existing_users) setUsers(existing_users);
       } catch (error) { console.error(error); }
     };
     getUsers();
   }, []);
 
-  const transferGuestData = async (guestId: number, cid: string) => {
-    // 1. Update bill_members to replace guest_user_id with clerk_user_id
+  const transferGuestData = async (guestId: number, userId: string) => {
+    // 1. Update bill_members to replace guest_id with the new user UUID
     await supabase
       .from('bill_members')
-      .update({ user_id: cid, guest_id: null })
+      .update({ user_id: userId, guest_id: null })
       .eq('guest_id', guestId);
 
-    // 2. Optionally, migrate other tables if guest had debts or expenses
+    // 2. Update expenses involved
     await supabase
       .from('expenses_involved')
-      .update({ bill_member_id: cid })  // adjust if needed
+      .update({ bill_member_id: userId })
       .eq('guest_id', guestId);
 
-    // 3. Delete guest_user row if no longer needed
+    // 3. Cleanup guest row
     await supabase
       .from('guest_users')
       .delete()
@@ -139,38 +135,41 @@ export default function Page() {
   };
 
   const onSignUpPress = async () => {
-  if (!validateForm()) return;
-  setSignupLoading(true);
+    if (!validateForm()) return;
+    setSignupLoading(true);
 
-  try {
-    // 1. Create the user in Supabase Auth
-    const { data, error } = await supabase.auth.signUp({
-      email: emailAddress,
-      password: password,
-      options: {
-        data: {
-          first_name: firstName,
-          last_name: lastName,
-          username: username,
-          nickname: nickname,
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: emailAddress,
+        password: password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+            username: username,
+            nickname: nickname,
+          },
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined, 
         }
-      }
-    });
+      });
 
-    if (error) throw error;
-
-    // 2. If Supabase is set to 'Confirm Email', show the verification box
-    setPendingVerification(true);
-    alert("Check your email for the verification code!");
-    
-  } catch (err: any) {
-    alert(err.message);
-  } finally {
-    setSignupLoading(false);
-  }
-};
+      if (error) throw error;
+      setPendingVerification(true);
+      alert("Check your email! A 6-digit code has been sent.");
+      
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSignupLoading(false);
+    }
+  };
 
   const onVerifyPress = async () => {
+  if (code.length < 6) {
+    alert("Please enter the 6-digit code");
+    return;
+  }
+  
   setVerificationLoading(true);
   try {
     const { data: { session }, error } = await supabase.auth.verifyOtp({
@@ -182,11 +181,13 @@ export default function Page() {
     if (error) throw error;
 
     if (session) {
-      // NOW: Insert the extra details into your NEW public.users table
+      const userId = session.user.id;
+
+      // 1. Create the User Profile
       const { error: profileError } = await supabase
         .from('users')
         .insert({
-          id: session.user.id, // The ID from the Auth session
+          id: userId,
           first_name: firstName,
           last_name: lastName,
           username: username,
@@ -194,38 +195,45 @@ export default function Page() {
           email: emailAddress,
         });
 
-      if (profileError) {
-        console.error("Profile creation error:", profileError.message);
+      if (profileError) throw profileError;
+
+      // 2. Get the ID for the 'Standard' role
+      const { data: roleData } = await supabase
+        .from('roles')
+        . Moran('name', 'Standard')
+        .single();
+
+      // 3. Assign the Role
+      if (roleData) {
+        await supabase
+          .from('user_has_roles')
+          .insert({ 
+            user_id: userId, 
+            role_id: roleData.id  // Linking to the roles table
+          });
       }
 
+      if (gId) {
+        await transferGuestData(Number(gId), userId);
+      }
+      
       router.replace('/(dashboardpage)/dashboard');
     }
   } catch (err: any) {
-    alert(err.message);
+    alert(err.message || "Invalid code.");
   } finally {
     setVerificationLoading(false);
   }
 };
 
-  if (pendingVerification) {
-    return (
-      <ImageBackground source={require('../../assets/images/bg.jpg')} style={styles.background}>
-        <View style={styles.overlay}>
-          <View style={styles.registerBox}>
-            <ThemedText style={styles.title}>Verify Email</ThemedText>
-            <ThemedText style={styles.subtitle}>Check your inbox for the code</ThemedText>
-            <TextInput style={styles.input} value={code} placeholder="000000" onChangeText={setCode} keyboardType="numeric" />
-            <Pressable style={styles.button} onPress={onVerifyPress}>
-              {verificationLoading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Verify</ThemedText>}
-            </Pressable>
-          </View>
-        </View>
-      </ImageBackground>
-    );
-  }
-
-
-
+  const resendCode = async () => {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: emailAddress,
+    });
+    if (error) alert(error.message);
+    else alert("New code sent to your email!");
+  };
 
   return (
     <ImageBackground source={require('../../assets/images/bg.jpg')} style={styles.background}>
@@ -243,10 +251,6 @@ export default function Page() {
                 {pendingVerification ? "Enter the code sent to your inbox" : "Create your account to start"}
               </ThemedText>
             </View>
-
-            {clerkErrors.errors?.map((err: any, i: number) => (
-              <Text key={i} style={styles.clerkError}>{err.longMessage}</Text>
-            ))}
 
             {!pendingVerification ? (
               <>
@@ -281,7 +285,7 @@ export default function Page() {
                   {verificationLoading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Verify Account</ThemedText>}
                 </Pressable>
 
-                <Pressable onPress={() => signUp.prepareEmailAddressVerification({ strategy: 'email_code' })}>
+                <Pressable onPress={resendCode}>
                   <ThemedText style={styles.footerText}>
                     Didn't get a code? <ThemedText style={styles.link}>Resend</ThemedText>
                   </ThemedText>
@@ -334,7 +338,6 @@ const styles = StyleSheet.create({
   inputError: { borderColor: '#FF3B30', backgroundColor: '#FFF2F2' },
   errorContainer: { minHeight: 18, marginTop: 2, marginBottom: 4 },
   fieldError: { color: '#FF3B30', fontSize: 11, fontWeight: '600', marginLeft: 4 },
-  clerkError: { color: '#FF3B30', textAlign: 'center', marginBottom: 15, fontSize: 13, fontWeight: '700', paddingHorizontal: 10 },
   button: {
     backgroundColor: 'tomato',
     height: 58,

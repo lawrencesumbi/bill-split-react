@@ -1,60 +1,78 @@
-import { useSignIn } from '@clerk/clerk-expo';
-import type { EmailCodeFactor } from '@clerk/types';
+import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
-import { ActivityIndicator, ImageBackground, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from 'react-native';
 
 export default function Login() {
   const router = useRouter()
-  const { signIn, setActive, isLoaded } = useSignIn()
-  const [email, setEmail] = React.useState('') // Identifier
+  
+  // --- States ---
+  const [email, setEmail] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [isPasswordVisible, setIsPasswordVisible] = React.useState(false)
   const [code, setCode] = React.useState('')
   const [showEmailCode, setShowEmailCode] = React.useState(false)
-  const [clerkErrors, setClerkErrors] = React.useState<any>({})
-  const [loginLoading, setLoginloading] = React.useState(false)
+  const [loading, setLoading] = React.useState(false)
   const [verifyLoading, setVerifyLoading] = React.useState(false)
 
-  let messages = clerkErrors.errors || []
+  // --- Actions ---
 
-  const onSignInPress = React.useCallback(async () => {
-    if (!isLoaded) return
-    setLoginloading(true)
+  const onSignInPress = async () => {
+    if (!email || !password) return;
+    
+    setLoading(true);
     try {
-      const signInAttempt = await signIn.create({ identifier: email, password })
-      setLoginloading(false)
-      if (signInAttempt.status === 'complete') {
-        await setActive({
-          session: signInAttempt.createdSessionId,
-          navigate: async () => router.replace('/(dashboardpage)/dashboard'),
-        })
-      } else if (signInAttempt.status === 'needs_second_factor') {
-        const emailCodeFactor = signInAttempt.supportedSecondFactors?.find(
-          (factor): factor is EmailCodeFactor => factor.strategy === 'email_code'
-        )
-        if (emailCodeFactor) {
-          await signIn.prepareSecondFactor({ strategy: 'email_code', emailAddressId: emailCodeFactor.emailAddressId })
-          setShowEmailCode(true)
-        }
-      }
-    } catch (err) {
-      setLoginloading(false)
-      setClerkErrors(JSON.parse(JSON.stringify(err, null, 2)))
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+
+      if (error) throw error;
+
+      // If successful, the AuthLayout will automatically detect the session
+      // but we call replace here to be safe.
+      if (data.session) {
+        router.replace('/(dashboardpage)/dashboard');
+      } 
+    } catch (err: any) {
+      Alert.alert("Login Error", err.message);
+    } finally {
+      setLoading(false);
     }
-  }, [isLoaded, signIn, setActive, router, email, password])
+  };
 
-  const onVerifyPress = React.useCallback(async () => {
-    if (!isLoaded) return
-    setVerifyLoading(true)
+  const onVerifyPress = async () => {
+    setVerifyLoading(true);
     try {
-      const signInAttempt = await signIn.attemptSecondFactor({ strategy: 'email_code', code })
-      if (signInAttempt.status === 'complete') {
-        await setActive({ session: signInAttempt.createdSessionId, navigate: async () => router.replace('/(dashboardpage)/dashboard') })
-      } else { setVerifyLoading(false) }
-    } catch (err) { setVerifyLoading(false) }
-  }, [isLoaded, signIn, setActive, router, code])
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'signup', // or 'login' depending on your Supabase 2FA settings
+      });
+
+      if (error) throw error;
+
+      if (data.session) {
+        router.replace('/(dashboardpage)/dashboard');
+      }
+    } catch (err: any) {
+      Alert.alert("Verification Error", err.message);
+    } finally {
+      setVerifyLoading(false);
+    }
+  }
 
   return (
     <View style={styles.mainContainer}>
@@ -84,18 +102,13 @@ export default function Login() {
               {showEmailCode ? "Check your inbox for a code" : "Log in to manage your bills"}
             </Text>
 
-            {messages.map((message: any, index: number) => (
-              <Text key={index} style={styles.errorMessage}>{message.longMessage}</Text>
-            ))}
-
             {!showEmailCode ? (
               <>
                 <View style={styles.inputWrapper}>
-                  {/* ICON CHANGED TO PERSON-OUTLINE */}
                   <Ionicons name="mail-outline" size={20} color="#999" style={styles.inlineIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Email Address" // UPDATED PLACEHOLDER
+                    placeholder="Email Address"
                     placeholderTextColor="#999"
                     autoCapitalize="none"
                     value={email}
@@ -122,16 +135,16 @@ export default function Login() {
                   </Pressable>
                 </View>
 
-                <Pressable onPress={() => router.push('/forgot-password')} style={styles.forgotBtn}>
+                <Pressable onPress={() => router.push('/(auth)/forgot-password')} style={styles.forgotBtn}>
                   <Text style={styles.forgotText}>Forgot Password?</Text>
                 </Pressable>
 
                 <Pressable
                   style={[styles.button, (!email || !password) && styles.buttonDisabled]}
                   onPress={onSignInPress}
-                  disabled={!email || !password || loginLoading}
+                  disabled={!email || !password || loading}
                 >
-                  {loginLoading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Login</Text>}
+                  {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Login</Text>}
                 </Pressable>
               </>
             ) : (
@@ -152,7 +165,7 @@ export default function Login() {
               </View>
             )}
 
-            <Pressable onPress={() => router.push('/sign-up')} style={styles.signUpContainer}>
+            <Pressable onPress={() => router.push('/(auth)/sign-up')} style={styles.signUpContainer}>
               <Text style={styles.footerText}>
                 Don't have an account? <Text style={styles.signUpLink}>Sign Up</Text>
               </Text>
@@ -237,7 +250,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { backgroundColor: '#FFA08E' },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  errorMessage: { color: '#FF3B30', fontSize: 13, marginBottom: 15, textAlign: 'center' },
   signUpContainer: { marginTop: 25 },
   footerText: { fontSize: 14, color: '#666' },
   signUpLink: { color: 'tomato', fontWeight: '800' },

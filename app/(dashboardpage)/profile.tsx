@@ -1,11 +1,10 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from "@/utils/supabase";
-import { useClerk, useUser } from "@clerk/clerk-expo";
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-// Memoized InputField component to prevent "letter by letter" issue
+// Memoized InputField component to prevent "letter by letter" re-rendering issue
 const InputField = React.memo(({ label, value, onChangeText, icon, ...props }: any) => (
   <View style={styles.inputWrapper}>
     <ThemedText style={styles.label}>{label}</ThemedText>
@@ -16,6 +15,7 @@ const InputField = React.memo(({ label, value, onChangeText, icon, ...props }: a
         value={value}
         onChangeText={onChangeText}
         placeholderTextColor="#C7C7CC"
+        autoCapitalize="none"
         {...props}
       />
     </View>
@@ -23,57 +23,92 @@ const InputField = React.memo(({ label, value, onChangeText, icon, ...props }: a
 ));
 
 export default function Profile() {
-  const [lastName, setLastName] = useState('');
+  const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const { user } = useUser();
-  const { openUserProfile } = useClerk();
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // Load profile from Clerk + Supabase
-  const loadUserProfile = async () => {
-    if (!user) return;
+  // Load profile from Supabase
+  const loadUserProfile = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    const { data: supaData, error: supaError } = await supabase
-      .from("clerk_users")
-      .select("*")
-      .eq("clerk_user_id", user.id)
-      .single();
+      if (authError || !user) throw authError;
 
-    if (supaError) console.log("Supabase error:", supaError);
+      setUserId(user.id);
+      setEmail(user.email || "");
 
-    setFirstName(user.firstName || "");
-    setLastName(user.lastName || "");
-    setUsername(user.username || "");
-    setEmail(user.emailAddresses?.[0]?.emailAddress || "");
-    setNickname(supaData?.nickname || "");
-  };
+      // Fetch additional profile data from your custom 'profiles' table
+      const { data, error: supaError } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, nickname")
+        .eq("id", user.id)
+        .single();
+
+      if (supaError && supaError.code !== 'PGRST116') { // PGRST116 is "no rows found"
+        console.error("Supabase error:", supaError);
+      }
+
+      if (data) {
+        setFirstName(data.first_name || "");
+        setLastName(data.last_name || "");
+        setNickname(data.nickname || "");
+      }
+    } catch (err) {
+      console.error("Load profile error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadUserProfile();
-  }, [user]);
+  }, [loadUserProfile]);
 
-  // Save firstName, lastName, nickname
   const handleSaveChanges = async () => {
-    if (!user) return;
+    if (!userId) return;
 
     try {
-      await user.update({ firstName, lastName });
-
+      // Update the custom profiles table
       const { error } = await supabase
-        .from("clerk_users")
-        .update({ nickname })
-        .eq("clerk_user_id", user.id);
+        .from("profiles")
+        .upsert({
+          id: userId,
+          first_name: firstName,
+          last_name: lastName,
+          nickname: nickname,
+          updated_at: new Date().toISOString(),
+        });
 
       if (error) throw error;
 
-      alert("Profile updated successfully!");
+      Alert.alert("Success", "Profile updated successfully!");
     } catch (err: any) {
-      console.log("Update error:", err);
-      alert(err?.message || "Something went wrong");
+      console.error("Update error:", err);
+      Alert.alert("Error", err?.message || "Something went wrong while saving.");
     }
   };
+
+  const handlePasswordReset = async () => {
+    if (!email) return;
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) {
+      Alert.alert("Error", error.message);
+    } else {
+      Alert.alert("Reset Email Sent", "Check your inbox to change your password.");
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color="tomato" />
+      </View>
+    );
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -102,10 +137,14 @@ export default function Profile() {
       {/* Account Details */}
       <View style={styles.card}>
         <ThemedText style={styles.cardTitle}>Account Details</ThemedText>
-        <InputField label="Email Address" value={email} editable={false} />
-        <InputField label="Username" value={username} editable={false} />
-        <Pressable onPress={() => openUserProfile()} style={{ marginTop: 8 }}>
-          <Text style={{ color: "blue" }}>Change Username / Password</Text>
+        <InputField 
+          label="Email Address" 
+          value={email} 
+          editable={false} 
+          icon="mail-outline"
+        />
+        <Pressable onPress={handlePasswordReset} style={{ marginTop: 8 }}>
+          <Text style={{ color: "tomato", fontWeight: '600' }}>Request Password Reset</Text>
         </Pressable>
       </View>
 
@@ -114,15 +153,13 @@ export default function Profile() {
         <Pressable style={styles.saveButton} onPress={handleSaveChanges}>
           <ThemedText style={styles.saveButtonText}>Save Changes</ThemedText>
         </Pressable>
-        
       </View>
     </ScrollView>
   );
 }
 
-// Styles
 const styles = StyleSheet.create({
-  container: { padding: 40, backgroundColor: '#F8F9FA' },
+  container: { padding: 40, backgroundColor: '#F8F9FA', paddingBottom: 100 },
   headerSection: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
   headerTitle: { fontSize: 28, fontWeight: '800', color: '#1C1C1E' },
   headerSubtitle: { fontSize: 14, color: '#8E8E93', marginTop: 4 },
@@ -134,7 +171,7 @@ const styles = StyleSheet.create({
   inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7', borderRadius: 12, paddingHorizontal: 12, height: 50 },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: '#1C1C1E' },
-  footer: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  saveButton: { backgroundColor: '#1C1C1E', paddingVertical: 16, paddingHorizontal: 30, borderRadius: 14, alignItems: 'center' },
+  footer: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  saveButton: { backgroundColor: 'tomato', paddingVertical: 16, paddingHorizontal: 40, borderRadius: 14, alignItems: 'center', width: '100%' },
   saveButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

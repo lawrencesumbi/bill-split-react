@@ -1,6 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/utils/supabase';
-import { useAuth, useUser } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Slot, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -9,17 +8,39 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, TouchableOpacity, View
 export default function DashboardLayout() {
   const router = useRouter();
   const pathname = usePathname();
+  
   const [userRole, setUserRole] = useState('');
-  const [showLogoutModal, setShowLogoutModal] = useState(false); // NEW: Modal state
-  const { signOut, isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [session, setSession] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // 1. Handle Session and Auth State
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setIsLoading(false);
+    });
+
+    // Listen for auth changes (like sign out)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (!session) {
+        router.replace('/(auth)/sign-in');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // 2. Fetch User Role from Supabase
   const fetchUserRole = async () => {
-    if (!user?.id) return;
+    if (!session?.user?.id) return;
+    
     const { data, error } = await supabase
       .from('user_has_roles')
       .select(`*, roles:role_id ( name )`)
-      .eq('clerk_user_id', user?.id);
+      .eq('clerk_user_id', session.user.id); // Note: keeping your column name 'clerk_user_id' if you haven't renamed it in DB
 
     if (!error && data && data.length > 0) {
       setUserRole(data[0]?.roles.name);
@@ -27,10 +48,17 @@ export default function DashboardLayout() {
   };
 
   useEffect(() => {
-    fetchUserRole();
-  }, [user?.id]);
+    if (session) fetchUserRole();
+  }, [session]);
 
-  if (!isLoaded) {
+  // 3. Handle Logout
+  const handleLogout = async () => {
+    setShowLogoutModal(false);
+    await supabase.auth.signOut();
+    router.replace('/(auth)/sign-in');
+  };
+
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="tomato" />
@@ -38,8 +66,8 @@ export default function DashboardLayout() {
     );
   }
 
-  if (!isSignedIn) {
-    return <Redirect href='/(auth)/sign-in' />;
+  if (!session) {
+    return <Redirect href="/(auth)/sign-in" />;
   }
 
   const NavItem = ({ name, icon, path }: { name: string; icon: any; path: string }) => {
@@ -78,7 +106,7 @@ export default function DashboardLayout() {
             <ThemedText style={styles.sectionTitle}>MENU</ThemedText>
             <NavItem name="Bills" icon="receipt" path="dashboard" />
             <NavItem name="Archive" icon="archive" path="archivebill" />
-            <NavItem name="Profile" icon="person" path="profile" />
+            <NavItem name="Profile" icon="profile" path="profile" />
           </View>
         </View>
 
@@ -100,7 +128,7 @@ export default function DashboardLayout() {
             <View style={styles.userCard}>
               <View style={styles.userInfo}>
                 <ThemedText style={styles.userName} numberOfLines={1}>
-                  {user?.firstName || 'User'}
+                  {session?.user?.email?.split('@')[0] || 'User'}
                 </ThemedText>
                 <View style={[styles.roleBadge, isPremium && styles.roleBadgePremium]}>
                   <ThemedText style={[styles.roleText, isPremium && styles.roleTextPremium]}>
@@ -109,7 +137,6 @@ export default function DashboardLayout() {
                 </View>
               </View>
 
-              {/* Trigger Modal instead of immediate signout */}
               <Pressable onPress={() => setShowLogoutModal(true)} style={styles.logoutBtn}>
                 <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
               </Pressable>
@@ -147,10 +174,7 @@ export default function DashboardLayout() {
                 
                 <TouchableOpacity 
                     style={styles.confirmBtn} 
-                    onPress={() => {
-                        setShowLogoutModal(false);
-                        signOut();
-                    }}
+                    onPress={handleLogout}
                 >
                     <ThemedText style={styles.confirmBtnText}>Logout</ThemedText>
                 </TouchableOpacity>
@@ -219,7 +243,6 @@ const styles = StyleSheet.create({
   logoutBtn: { padding: 8, backgroundColor: '#FFF0EF', borderRadius: 10 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' },
 
-  // MODAL STYLES
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -260,35 +283,32 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     lineHeight: 20,
   },
-  // ... rest of your styles
-
   modalActionRow: {
     flexDirection: 'row',
-    width: '100%',       // Ensure the row takes full width of the container
+    width: '100%',
     gap: 12,
-    marginTop: 8,       // Adds breathing room between the subtitle and the buttons
+    marginTop: 8,
   },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 16, // Increased padding for a better tap target
+    paddingVertical: 16,
     borderRadius: 16,
     backgroundColor: '#F2F2F7',
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelBtnText: {
-    fontSize: 16,       // Slightly larger text
+    fontSize: 16,
     fontWeight: '700',
     color: '#8E8E93',
   },
   confirmBtn: {
     flex: 1,
-    paddingVertical: 16, // Increased padding
+    paddingVertical: 16,
     borderRadius: 16,
     backgroundColor: '#FF3B30',
     alignItems: 'center',
     justifyContent: 'center',
-    // Added a subtle shadow to the primary action button
     shadowColor: '#FF3B30',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,

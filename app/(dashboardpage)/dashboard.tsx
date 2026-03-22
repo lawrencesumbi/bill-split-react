@@ -1,209 +1,135 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from "@/utils/supabase";
-import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import validator from 'validator';
+// Find your react-native import and add Platform
+import {
+    Platform // <--- ADD THIS
+} from 'react-native';
 
-    // --- MAIN DASHBOARD COMPONENT ---
-    export default function Dashboard() {
-    const { user } = useUser();
-const router = useRouter();
+export default function Dashboard() {
+    const router = useRouter();
+    
+    // --- AUTH & USER STATE ---
+    const [session, setSession] = useState(null);
+    const [userRole, setUserRole] = useState('Standard');
+    
+    // --- BILL STATE ---
     const [bills, setBills] = useState([]);
-    const [showAddModal, setShowAddModal] = useState(false);
     const [billName, setBillName] = useState("");
     const [inviteCode, setInviteCode] = useState(generateInviteCode());
+    const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([]);
+    
+    // --- MODAL CONTROLS ---
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [showSelectPeopleModal, setShowSelectPeopleModal] = useState(false);
     const [showAddGuestModal, setShowAddGuestModal] = useState(false);
-    const [userRole, setUserRole] = useState('')
-   const [showLimitModal, setShowLimitModal] = useState(false);
+    const [showLimitModal, setShowLimitModal] = useState(false);
+    const [showPeopleLimitModal, setShowPeopleLimitModal] = useState(false);
+    const [showEmailExistsModal, setShowEmailExistsModal] = useState(false);
+
+    // --- GUEST FORM STATE ---
     const [guestFirst, setGuestFirst] = useState("");
     const [guestLast, setGuestLast] = useState("");
     const [guestEmail, setGuestEmail] = useState("");
-   const [showPeopleLimitModal, setShowPeopleLimitModal] = useState(false);
-    const BILL_ADD_LIMIT = 5;
-     const [showValidationModal, setShowValidationModal] = useState(false);
-const [validationMessage, setValidationMessage] = useState('');
-    const [showEmailExistsModal, setShowEmailExistsModal] = useState(false)
-
     const [errors, setErrors] = useState({});
 
-    // Confirmed people for the new bill
-    const [selectedInvolvedPeople, setSelectedInvolvedPeople] = useState([]);
-    
-    // Controls the new wireframe "Select People" modal
-    const [showSelectPeopleModal, setShowSelectPeopleModal] = useState(false);
-   
+    const BILL_ADD_LIMIT = 5;
+
+    // --- INITIALIZATION ---
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        if (session?.user) {
+            fetchUserRole();
+            loadBills();
+        }
+    }, [session]);
+
     function generateInviteCode() {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // --- LOGIC: TRANSITION FROM SELECT TO GUEST ---
-    const openGuestModal = () => {
-        setShowSelectPeopleModal(false); // Hide the list modal
-        setShowAddGuestModal(true);      // Show the guest form
-    };
-
-    const closeGuestModal = () => {
-        setShowAddGuestModal(false);     
-        setShowSelectPeopleModal(true);  // Return to the list modal
-    };
-
     const fetchUserRole = async () => {
+        if (!session?.user?.id) return;
         const { data, error } = await supabase
-        .from('user_has_roles')
-        .select(`*,
-            roles:role_id (
-                name
-            )
-            `)
-        .eq('clerk_user_id', user?.id);
+            .from('user_has_roles')
+            .select(`roles:role_id ( name )`)
+            .eq('user_id', session.user.id);
 
-        if(!error) return setUserRole(data[0]?.roles.name);
+        if (!error && data?.length > 0) setUserRole(data[0]?.roles.name);
     }
-
-    useEffect(() => {
-        fetchUserRole()
-    }, []);
-
-    console.log(userRole)
-    console.log("selected involved people: ", selectedInvolvedPeople);
-
- const createBill = async () => {
-  if (!billName) { 
-    alert("Bill name required"); 
-    return; 
-  }
-  
-  if (validator.equals(userRole, 'Standard') && getBillEntries() >= BILL_ADD_LIMIT) { 
-  setShowLimitModal(true);
-  return;
-}
-
-  // Check if trying to add more than 3 people (Standard users)
-  if (validator.equals(userRole, 'Standard') && selectedInvolvedPeople.length > 3) {
-    alert('Standard users can only add up to 3 people per bill.');
-    return;
-  }
-
-  const { data, error } = await supabase
-    .from("bills")
-    .insert([{ 
-      name: billName, 
-      invite_code: inviteCode, 
-      created_by: user?.id 
-    }])
-    .select()
-    .single();
-
-  if (error) { 
-    alert(error.message); 
-    return; 
-  }
-
-  const billId = data.id;
-
-  // Only add selected members
-  if (selectedInvolvedPeople.length > 0) {
-    const memberInserts = [];
-
-    for (const person of selectedInvolvedPeople) {
-      // Check if this is a registered user
-      const isRegisteredUser = person.type === 'registered';
-
-      if (isRegisteredUser) {
-        // REGISTERED USER
-        memberInserts.push({
-          bill_id: billId,
-          user_id: person.id,
-          guest_id: null
-        });
-      } else {
-        // GUEST USER - person.id should now be the actual guest_users.id
-        memberInserts.push({
-          bill_id: billId,
-          user_id: null,
-          guest_id: person.id  // This should be the database ID from guest_users
-        });
-      }
-    }
-
-    // Insert all selected members
-    if (memberInserts.length > 0) {
-      const { error: membersError } = await supabase
-        .from("bill_members")
-        .insert(memberInserts);
-
-      if (membersError) {
-        console.error("Error inserting members:", membersError);
-        alert("Error adding members to bill");
-        return;
-      }
-    }
-  }
-
-  loadBills();
-  setShowAddModal(false);
-  resetForm();
-};
-
-    const getBillEntries = () => {
-        const now = new Date();
-        const currentMonth = now.getMonth()
-        const currentYear = now.getFullYear()
-
-        const entries = bills.filter(bill => {
-            const d = new Date(bill.created_at);
-            return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-        }).length;
-
-        return entries;
-    }
-
-    console.log(BILL_ADD_LIMIT)
-    // console.log(userRole)
-    console.log(getBillEntries())
-
 
     const loadBills = async () => {
+        if (!session?.user?.id) return;
         const { data, error } = await supabase
-        .from("bills")
-        .select("*")
-        .eq("created_by", user?.id)
-        .eq("status", "active")
-        .order("created_at", { ascending: false });
+            .from("bills")
+            .select("*")
+            .eq("created_by", session.user.id)
+            .eq("status", "active")
+            .order("created_at", { ascending: false });
         if (!error) setBills(data);
     };
 
-    const archiveBill = async (billId: number) => {
-        const { error } = await supabase.from('bills').update({ status: 'archived'}).eq('id', billId);
-
-        if(error) {
-          console.error(error.message);
-          return;
-        }
-
-        loadBills();
-    }
-
-
-    const deleteBill = async (billId) => {
-        const confirmDelete = confirm("Are you sure you want to delete this bill?");
-        if (!confirmDelete) return;
-
-        const { error } = await supabase
-            .from("bills")
-            .delete()
-            .eq("id", billId);
-
-        if (error) {
-            alert(error.message);
+    const createBill = async () => {
+        if (!billName) { alert("Bill name required"); return; }
+        
+        if (userRole === 'Standard' && getBillEntries() >= BILL_ADD_LIMIT) { 
+            setShowLimitModal(true);
             return;
         }
 
-        loadBills(); // refresh list
+        if (userRole === 'Standard' && selectedInvolvedPeople.length > 3) {
+            setShowPeopleLimitModal(true);
+            return;
+        }
+
+        const { data, error } = await supabase
+            .from("bills")
+            .insert([{ 
+                name: billName, 
+                invite_code: inviteCode, 
+                created_by: session?.user?.id 
+            }])
+            .select().single();
+
+        if (error) { alert(error.message); return; }
+
+        if (selectedInvolvedPeople.length > 0) {
+            const memberInserts = selectedInvolvedPeople.map(person => ({
+                bill_id: data.id,
+                user_id: person.type === 'registered' ? person.id : null,
+                guest_id: person.type === 'guest' ? person.id : null
+            }));
+
+            await supabase.from("bill_members").insert(memberInserts);
+        }
+
+        loadBills();
+        setShowAddModal(false);
+        resetForm();
     };
+
+    const getBillEntries = () => {
+        const now = new Date();
+        return bills.filter(bill => {
+            const d = new Date(bill.created_at);
+            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        }).length;
+    }
 
     const resetForm = () => {
         setBillName("");
@@ -211,652 +137,189 @@ const [validationMessage, setValidationMessage] = useState('');
         setInviteCode(generateInviteCode());
     };
 
-    const handleSubmit = async () => {
-        if(validateForm()) {
-            handleAddGuestSubmit()
+    const handleAddGuestSubmit = async () => {
+        if (!guestFirst || !guestEmail || !validator.isEmail(guestEmail)) {
+            setErrors({ email: "Valid First name and Email required" });
+            return;
         }
-    }
 
-   const validateForm = () => {
-  let errors = {};
+        const { data: existingGuest } = await supabase
+            .from("guest_users")
+            .select("id").eq("email", guestEmail).maybeSingle();
 
-  if (validator.isEmpty(guestFirst)) errors.guestFirst = "First name must not be empty";
-  if (!validator.isEmail(guestEmail)) errors.guestEmail = "Email must be in correct format.";
-  if (validator.isEmpty(guestEmail)) errors.guestEmail = "Email must not be empty.";
+        if (existingGuest) {
+            setShowAddGuestModal(false);
+            setShowEmailExistsModal(true);
+            return;
+        }
 
-  setErrors(errors);
-  return Object.keys(errors).length === 0;
-};
+        const { data: guestData, error: guestError } = await supabase
+            .from("guest_users")
+            .insert({ first_name: guestFirst, last_name: guestLast || '', email: guestEmail })
+            .select().single();
 
-const handleAddGuestSubmit = async () => {
-  if (!guestFirst || !guestEmail) {
-    alert("First name and Email are required");
-    return;
-  }
+        if (guestError) return;
 
-  if (!validator.isEmail(guestEmail)) {
-    alert("Please enter a valid email address");
-    return;
-  }
+        const newGuest = {
+            id: guestData.id,
+            name: `${guestFirst} ${guestLast}`.trim(),
+            type: 'guest',
+            uniqueKey: `g-${guestData.id}`
+        };
 
-  try {
-
-    // Check if guest email already exists
-    const { data: existingGuest, error: checkError } = await supabase
-      .from("guest_users")
-      .select("id, first_name, last_name, email")
-      .eq("email", guestEmail)
-      .maybeSingle();
-
-    if (checkError) {
-      console.error("Error checking existing guest:", checkError);
-      alert("Error checking email availability");
-      return;
-    }
-
-    // If email already exists, show the error modal
-    if (existingGuest) {
+        setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
+        setGuestFirst(""); setGuestLast(""); setGuestEmail("");
         setShowAddGuestModal(false);
-      setShowEmailExistsModal(true);
-      return;
-    }
-
-    // 1️⃣ Insert the guest into guest_users table
-    const { data: guestData, error: guestError } = await supabase
-      .from("guest_users")
-      .insert({
-        first_name: guestFirst,
-        last_name: guestLast || '',
-        email: guestEmail
-      })
-      .select()
-      .single();
-
-    if (guestError) {
-      console.error("Error creating guest:", guestError);
-      alert("Failed to create guest. Please try again.");
-      return;
-    }
-
-    // 2️⃣ Create the guest object for local state
-    const newGuest = {
-      id: guestData.id, // Use the actual database ID
-      name: `${guestFirst} ${guestLast}`.trim(),
-      first_name: guestFirst,
-      last_name: guestLast || '',
-      email: guestEmail,
-      type: 'guest',
-      uniqueKey: `g-${guestData.id}` // Use the database ID for the uniqueKey
+        setShowSelectPeopleModal(true);
     };
 
-    // 3️⃣ Add to selected people
-    setSelectedInvolvedPeople([...selectedInvolvedPeople, newGuest]);
+    // --- MODAL COMPONENTS ---
 
-    // 4️⃣ Reset form and close modal
-    setGuestFirst(""); 
-    setGuestLast(""); 
-    setGuestEmail("");
-    setErrors({});
-    setShowAddGuestModal(false);
-    setShowSelectPeopleModal(true);
-
-  } catch (error) {
-    console.error("Unexpected error:", error);
-    alert("An unexpected error occurred");
-  }
-};
-
-    useEffect(() => { loadBills(); }, []);
-const getDisplayName = (person) => {
-  if (!person) return 'Unknown';
-  
-  if (person.type === 'registered') {
-    return person.nickname || person.name || 'Unknown User';
-  } else if (person.type === 'guest') {
-    return person.name || `${person.first_name || ''} ${person.last_name || ''}`.trim() || 'Unknown Guest';
-  }
-  
-  // Fallback for other cases
-  return person.name || 'Unknown';
-};
-
-    // --- HELPER COMPONENT: SELECT PEOPLE MODAL (BASED ON WIREFRAME) ---
-     const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection, onAddGuestPress }) => {
+    const SelectPeopleModal = ({ visible, onClose, onConfirm, currentSelection }) => {
         const [loading, setLoading] = useState(true);
-        const [allPotentialUsers, setAllPotentialUsers] = useState([]); // Master list
-        const [displayUsers, setDisplayUsers] = useState([]); // Filtered list
-        const [searchQuery, setSearchQuery] = useState("");
-        const [filter, setFilter] = useState('all'); // all, registered, guest
-        
-        // Tracks selections within this modal session before confirmation
+        const [displayUsers, setDisplayUsers] = useState([]);
         const [localSelection, setLocalSelection] = useState(currentSelection);
 
         useEffect(() => {
-        if (visible) {
-            loadUsersFromSupabase("all");
-            setLocalSelection(currentSelection);
-        }
-
-          const transferGuestData = async (clerkUserId: any) => {
-            // 1. Update bill_members to replace guest_user_id with clerk_user_id
-            await supabase
-              .from('bill_members')
-              .update({ user_id: clerkUserId, guest_id: null })
-              .eq('guest_id', 18);
-        
-            // 2. Optionally, migrate other tables if guest had debts or expenses
-            await supabase
-              .from('expenses_involved')
-              .update({ bill_member_id: clerkUserId })  // adjust if needed
-              .eq('guest_id', 18);
-        
-            // 3. Delete guest_user row if no longer needed
-            await supabase
-              .from('guest_users')
-              .delete()
-              .eq('id', 18);
-          };
-        
-          transferGuestData(user?.id)
+            if (visible) {
+                setLocalSelection(currentSelection);
+                loadUsers();
+            }
         }, [visible]);
 
-        const loadUsersFromSupabase = async (currentFilter = "all") => {
-        setLoading(true);
+        const loadUsers = async () => {
+            setLoading(true);
+            const { data: reg } = await supabase.from("profiles").select("id, nickname");
+            const { data: gst } = await supabase.from("guest_users").select("id, first_name, last_name, email");
 
-        try {
-            let users = [];
-
-            // REGISTERED USERS
-            if (currentFilter === "all" || currentFilter === "registered") {
-            const { data: registeredData } = await supabase
-                .from("clerk_users")
-                .select("clerk_user_id, nickname");
-
-            const formattedRegistered = (registeredData || []).map(u => ({
-                id: u.clerk_user_id,
-                name: u.nickname || "Unknown User",
-                type: "registered",
-                uniqueKey: `r-${u.clerk_user_id}`
-            }));
-
-            users = [...users, ...formattedRegistered];
-            }
-
-            // GUEST USERS
-            if (currentFilter === "all" || currentFilter === "guest") {
-            const { data: guestsData } = await supabase
-                .from("guest_users")
-                .select("id, first_name, last_name, email");
-
-            const formattedGuests = (guestsData || []).map(g => ({
-                id: g.id,
-                name: `${g.first_name} ${g.last_name}`,
-                type: "guest",
-                uniqueKey: `g-${g.id}`
-            }));
-
-            users = [...users, ...formattedGuests];
-            }
-
-            setAllPotentialUsers(users);
-            applyFilters(users, searchQuery, currentFilter);
-
-        } catch (error) {
-            console.error("Error loading users:", error);
-        } finally {
+            const formattedReg = (reg || []).map(u => ({ id: u.id, name: u.nickname || "User", type: "registered", uniqueKey: `r-${u.id}` }));
+            const formattedGst = (gst || []).map(g => ({ id: g.id, name: `${g.first_name} ${g.last_name}`, type: "guest", uniqueKey: `g-${g.id}`, email: g.email }));
+            
+            setDisplayUsers([...formattedReg, ...formattedGst].filter(u => u.id !== session?.user?.id));
             setLoading(false);
-        }
-        };
-
-    const applyFilters = (users, query, currentFilter) => {
-        let filtered = users;
-        // Filter by type
-        if (currentFilter !== 'all') {
-            filtered = filtered.filter(u => u.type === currentFilter);
-        }
-        // Filter by search query
-        if (query) {
-            filtered = filtered.filter(u => 
-            u.name.toLowerCase().includes(query.toLowerCase()) ||
-            (u.email && u.email.toLowerCase().includes(query.toLowerCase()))
-            );
-        }
-        setDisplayUsers(filtered);
-        };
-
-        // Handle Search input change
-        const handleSearch = (query) => {
-        setSearchQuery(query);
-        applyFilters(allPotentialUsers, query, filter);
-        };
-
-        // Cycle through filters (All -> Registered -> Guests -> All)
-        const toggleFilter = () => {
-        let nextFilter = "all";
-
-        if (filter === "all") nextFilter = "registered";
-        else if (filter === "registered") nextFilter = "guest";
-        else nextFilter = "all";
-
-        setFilter(nextFilter);
-
-        loadUsersFromSupabase(nextFilter);
         };
 
         const toggleSelection = (user) => {
-        const isSelected = localSelection.some(u => u.uniqueKey === user.uniqueKey);
-        if (isSelected) {
-            setLocalSelection(localSelection.filter(u => u.uniqueKey !== user.uniqueKey));
-        } else {
-            setLocalSelection([...localSelection, user]);
-        }
+            const exists = localSelection.some(u => u.uniqueKey === user.uniqueKey);
+            setLocalSelection(exists ? localSelection.filter(u => u.uniqueKey !== user.uniqueKey) : [...localSelection, user]);
         };
-
-        const handleConfirm = () => {
-
-        if (
-                validator.equals(userRole, 'Standard') &&
-                (localSelection.length > 3 || selectedInvolvedPeople.length > 3)
-                ) {
-                setShowPeopleLimitModal(true);
-                return;
-}
-
-        onConfirm(localSelection); // Pass local choices up to parent
-        onClose();
-        };
-
-        const FilterBadge = () => {
-        let label = 'All';
-        let icon = 'people';
-        if (filter === 'registered') { label = 'Reg'; icon = 'at-circle'; }
-        if (filter === 'guest') { label = 'Guest'; icon = 'happy'; }
-        return (
-            <Pressable style={styles.wireframeFilterBtn} onPress={toggleFilter}>
-            <Ionicons name={icon} size={16} color="#333" />
-            <ThemedText style={styles.filterBtnText}>{label}</ThemedText>
-            </Pressable>
-        );
-        };
-
-        
 
         return (
-        <Modal visible={visible} transparent animationType="slide">
-            <View style={styles.modalOverlay}>
-            <View style={styles.wireframeSelectPeopleBox}>
-                {/* Top Row: Controls (Based on Wireframe) */}
-                <View style={styles.wireframeControlsRow}>
-                <View style={styles.wireframeSearchWrapper}>
-                    <Ionicons name="search" size={18} color="#AEAEB2" />
-                    <TextInput
-                    style={styles.wireframeSearchInput}
-                    placeholder="Search registered or guest users..."
-                    placeholderTextColor="#C7C7CC"
-                    value={searchQuery}
-                    onChangeText={handleSearch}
-                    />
-                </View>
-                
-                <FilterBadge />
-
-                <Pressable
-                style={styles.wireframeIconBtn}
-                onPress={() => loadUsersFromSupabase(filter)}
-                >
-                <Ionicons name="refresh" size={18} color="#333" />
-                </Pressable>
-                
-                <Pressable style={styles.wireframeAddGuestBtn} onPress={onAddGuestPress}>
-                    <ThemedText style={styles.addGuestBtnText}>Add guest</ThemedText>
-                </Pressable>
-                </View>
-
-                {/* Center: Scrollable List Area */}
-                <View style={styles.wireframeListArea}>
-                {loading ? (
-                    <View style={styles.listCenterContent}><ActivityIndicator color="tomato" /></View>
-                ) : displayUsers.length === 0 ? (
-                    <View style={styles.listCenterContent}>
-                    <Ionicons name="search-outline" size={48} color="#CCC" />
-                    <ThemedText style={styles.placeholderText}>No users found</ThemedText>
+            <Modal visible={visible} transparent animationType="slide">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.wireframeSelectPeopleBox}>
+                        <View style={styles.modalHeaderRow}>
+                            <ThemedText style={styles.modalTitleText}>Select People</ThemedText>
+                            <Pressable onPress={() => { setShowSelectPeopleModal(false); setShowAddGuestModal(true); }}>
+                                <ThemedText style={{color: 'tomato'}}>+ Add Guest</ThemedText>
+                            </Pressable>
+                        </View>
+                        <ScrollView style={{marginVertical: 15}}>
+                            {loading ? <ActivityIndicator color="tomato" /> : displayUsers.map(u => (
+                                <Pressable key={u.uniqueKey} style={styles.wireframeUserRow} onPress={() => toggleSelection(u)}>
+                                    <View>
+                                        <ThemedText>{u.name}</ThemedText>
+                                        {u.type === 'guest' && <Text style={{fontSize: 10, color: '#999'}}>{u.email}</Text>}
+                                    </View>
+                                    <Ionicons name={localSelection.some(s => s.uniqueKey === u.uniqueKey) ? "checkbox" : "square-outline"} size={22} color="tomato" />
+                                </Pressable>
+                            ))}
+                        </ScrollView>
+                        <View style={styles.wireframeFooterRow}>
+                            <Pressable style={styles.wireframeCancelBtn} onPress={onClose}><Text>Cancel</Text></Pressable>
+                            <Pressable style={styles.wireframeConfirmBtn} onPress={() => { onConfirm(localSelection); onClose(); }}>
+                                <Text style={{color: '#fff'}}>Confirm ({localSelection.length})</Text>
+                            </Pressable>
+                        </View>
                     </View>
-                ) : (
-                    <ScrollView nestedScrollEnabled={true} showsVerticalScrollIndicator={true} contentContainerStyle={{paddingBottom: 10}}>
-                    {displayUsers.filter(d => d.id !== user.id).map((userItem) => {
-                        const isSelected = localSelection.some(u => u.uniqueKey === userItem.uniqueKey);
-                        return (
-                        <Pressable 
-                            key={userItem.uniqueKey} 
-                            style={[styles.wireframeUserRow, isSelected && styles.userRowSelected]} 
-                            onPress={() => toggleSelection(userItem)}
-                        >
-                            <Ionicons 
-                            name={userItem.type === 'registered' ? "at-circle" : "person-circle"} 
-                            size={28} 
-                            color={isSelected ? "tomato" : "#AEAEB2"} 
-                            />
-                            <View key={userItem.uniqueKey || userItem.id} style={styles.userInfo}>
-                            <ThemedText style={[styles.userNameText, isSelected && styles.textSelected]}>
-                                {getDisplayName(userItem)}
-                            </ThemedText>
-                            {userItem.type === 'guest' && <ThemedText style={styles.userSubtext}>{userItem.email}</ThemedText>}
-                            </View>
-                            <Ionicons 
-                            name={isSelected ? "checkbox" : "square-outline"} 
-                            size={24} 
-                            color={isSelected ? "tomato" : "#C7C7CC"} 
-                            />
-                        </Pressable>
-                        );
-                    })}
-                    </ScrollView>
-                )}
                 </View>
-
-                {/* Bottom: Action Buttons */}
-                <View style={styles.wireframeFooterRow}>
-                <Pressable style={styles.wireframeCancelBtn} onPress={onClose}>
-                    <ThemedText style={styles.cancelBtnText}>Cancel</ThemedText>
-                </Pressable>
-                <Pressable style={styles.wireframeConfirmBtn} onPress={handleConfirm}>
-                    <ThemedText style={styles.confirmBtnText}>
-                    Add People ({localSelection.length})
-                    </ThemedText>
-                </Pressable>
-                </View>
-            </View>
-            </View>
-        </Modal>
+            </Modal>
         );
     };
 
-    // --- RENDER MAIN UI ---
     return (
         <View style={styles.container}>
-        {/* Dashboard Header */}
-        <View style={styles.contentHeader}>
-            <View>
-            <ThemedText style={styles.headerTitle}>Active Bills</ThemedText>
-            <ThemedText style={styles.headerSubtitle}>Manage your shared expenses</ThemedText>
-            </View>
-            <Pressable style={styles.addButton} onPress={() => setShowAddModal(true)}>
-            <Ionicons name="add" size={22} color="#fff" />
-            <ThemedText style={styles.addButtonText}>New Bill</ThemedText>
-
-            </Pressable>
-        </View>
-
-      <ScrollView 
-  contentContainerStyle={styles.scrollContainer} 
-  showsVerticalScrollIndicator={false}
->
-  {bills.length === 0 ? (
-    <View style={styles.emptyState}>
-      <Ionicons name="receipt-outline" size={60} color="#CCC" />
-      <ThemedText style={styles.emptyTitle}>No Bills Yet</ThemedText>
-      <ThemedText style={styles.emptySubtitle}>
-        Create your first bill to start tracking expenses
-      </ThemedText>
-    </View>
-  ) : (
-    bills.map((bill) => (
-      <View key={bill.id} style={styles.billCard}>
-        <View style={styles.billHeader}>
-          <View style={styles.iconBg}>
-            <Ionicons name="receipt" size={20} color="tomato" />
-          </View>
-
-          <View style={styles.billMainInfo}>
-            <ThemedText style={styles.billName}>
-              {bill.name}
-            </ThemedText>
-            <ThemedText style={styles.billDate}>
-              Created {new Date(bill.created_at).toLocaleDateString()}
-            </ThemedText>
-          </View>
-
-          <View style={styles.statusBadge}>
-            <ThemedText style={styles.statusText}>
-              {bill.status}
-            </ThemedText>
-          </View>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.actionRow}>
-          {/* VIEW / EDIT */}
-          <Pressable 
-            style={[styles.actionIcon, { backgroundColor: '#F2F2F7' }]}
-            onPress={() => router.push({
-              pathname: '/viewbill',
-              params: { billId: bill.id, billName: bill.name }
-            })}
-          >
-            <Ionicons name="create" size={18} color="#666" />
-          </Pressable>
-
-          {/* ARCHIVE */}
-          <Pressable 
-            style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
-            onPress={() => archiveBill(bill.id)}
-          >
-            <Ionicons name="archive" size={18} color="#e48108" />
-          </Pressable>
-
-          {/* DELETE */}
-          <Pressable
-            style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}
-            onPress={() => deleteBill(bill.id)}
-          >
-            <Ionicons name="trash" size={18} color="#FF3B30" />
-          </Pressable>
-        </View>
-      </View>
-    ))
-  )}
-</ScrollView>
-
-        {/* --- CREATE BILL MODAL (Simplified to show selected people list) --- */}
-        <Modal visible={showAddModal} transparent animationType="fade">
-            <View style={styles.modalOverlay}>
-            <View style={styles.modernWireframeBox}>
-                <View style={styles.modalHeaderRow}>
-                <ThemedText style={styles.modalTitleText}>Create new bill</ThemedText>
-                <Pressable style={styles.closeBtn} onPress={() => { setShowAddModal(false); resetForm(); }}>
-                    <ThemedText style={styles.closeBtnText}>Close</ThemedText>
-                </Pressable>
+            <View style={styles.contentHeader}>
+                <View>
+                    <ThemedText style={styles.headerTitle}>Active Bills</ThemedText>
+                    <ThemedText style={styles.headerSubtitle}>Manage your shared expenses</ThemedText>
                 </View>
-
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 10 }}>
-                <ThemedText style={styles.fieldLabel}>Generated Code</ThemedText>
-                <View style={styles.codeRow}>
-                    <View style={styles.codeDisplayBox}>
-                    <ThemedText style={styles.codeDisplayText}>{inviteCode}</ThemedText>
-                    </View>
-                    <Pressable style={styles.regenBtn} onPress={() => setInviteCode(generateInviteCode())}>
-                    <Ionicons name="refresh" size={20} color="#fff" />
-                    </Pressable>
-                </View>
-
-                <ThemedText style={styles.fieldLabel}>Bill name</ThemedText>
-                <TextInput
-                    style={styles.modernInput}
-                    placeholder="e.g. Monthly Electricity"
-                    placeholderTextColor="#A1A1A1"
-                    value={billName}
-                    onChangeText={setBillName}
-                />
-
-                <View style={styles.involvedHeaderRow}>
-                    <ThemedText style={styles.fieldLabel}>Involved People</ThemedText>
-                    <View style={styles.involvedBtnGroup}>
-                    {/* MODIFIED: clicking now opens the selection modal */}
-                    <Pressable style={styles.smallActionBtn} onPress={() => setShowSelectPeopleModal(true)}>
-                        <Ionicons name="people-outline" size={14} color="#fff" style={{marginRight: 4}} />
-                        <ThemedText style={styles.smallActionBtnText}>Select People</ThemedText>
-                    </Pressable>
-                    </View>
-                </View>
-
-                <View style={styles.peopleListBox}>
-                    <ScrollView nestedScrollEnabled={true}>
-                    {selectedInvolvedPeople.length === 0 ? (
-                        <View style={styles.emptyListContent}>
-                            <Ionicons name="people-outline" size={32} color="#CCC" />
-                            <ThemedText style={styles.listPlaceholder}>List of involved people</ThemedText>
-                        </View>
-                    ) : (
-                        selectedInvolvedPeople.map((p, i) => (
-                        <View key={i} style={styles.personRow}>
-                            <Ionicons 
-                            name={p.type === 'registered' ? "at-circle" : "person-circle"} 
-                            size={24} 
-                            color="tomato" 
-                            />
-                            <ThemedText style={styles.personRowText}>{getDisplayName(p)}</ThemedText>
-                        </View>
-                        ))
-                    )}
-                    </ScrollView>
-                </View>
-                </ScrollView>
-
-                <Pressable style={styles.submitBtn} onPress={createBill}>
-                <ThemedText style={styles.submitBtnText}>Create Bill</ThemedText>
+                <Pressable style={styles.addButton} onPress={() => setShowAddModal(true)}>
+                    <Ionicons name="add" size={20} color="#fff" />
+                    <ThemedText style={styles.addButtonText}>New Bill</ThemedText>
                 </Pressable>
             </View>
-            </View>
-        </Modal>
 
-         {/* BILL LIMIT MODAL */}
-    <Modal visible={showLimitModal} transparent animationType="fade">
-    <View style={styles.modalOverlay}>
-        <View style={styles.limitModalBox}>
+            <ScrollView contentContainerStyle={styles.scrollContainer}>
+                {bills.length === 0 ? (
+                    <View style={styles.emptyState}><ThemedText>No active bills found.</ThemedText></View>
+                ) : (
+                    bills.map(bill => (
+                        <View key={bill.id} style={styles.billCard}>
+                            <View>
+                                <ThemedText style={styles.billName}>{bill.name}</ThemedText>
+                                <ThemedText style={styles.billDate}>{new Date(bill.created_at).toLocaleDateString()}</ThemedText>
+                            </View>
+                            <View style={styles.actionRow}>
+                                <Pressable onPress={() => router.push({ pathname: '/viewbill', params: { billId: bill.id } })}>
+                                    <Ionicons name="eye" size={20} color="#666" />
+                                </Pressable>
+                            </View>
+                        </View>
+                    ))
+                )}
+            </ScrollView>
 
-        <Ionicons name="warning-outline" size={48} color="tomato" />
-
-        <ThemedText style={styles.limitTitle}>
-            Monthly Limit Reached
-        </ThemedText>
-
-        <ThemedText style={styles.limitMessage}>
-            You have reached the maximum number of bills allowed this month.
-        </ThemedText>
-
-        <Pressable
-            style={styles.limitBtn}
-            onPress={() => setShowLimitModal(false)}
-        >
-            <ThemedText style={styles.limitBtnText}>OK</ThemedText>
-        </Pressable>
-        </View>
-    </View>
-</Modal>
-
-{/* PEOPLE LIMIT MODAL */}
-<Modal visible={showPeopleLimitModal} transparent animationType="fade">
-  <View style={styles.modalOverlay}>
-    <View style={styles.limitModalBox}>
-
-      <Ionicons name="people-outline" size={48} color="tomato" />
-
-      <ThemedText style={styles.limitTitle}>
-        Maximum People Reached
-      </ThemedText>
-
-      <ThemedText style={styles.limitMessage}>
-        Standard users can only add up to 3 people in a bill.
-      </ThemedText>
-
-      <Pressable
-        style={styles.limitBtn}
-        onPress={() => setShowPeopleLimitModal(false)}
-      >
-        <ThemedText style={styles.limitBtnText}>OK</ThemedText>
-      </Pressable>
-
-    </View>
-  </View>
-</Modal>
-
-{/* EMAIL EXISTS ERROR MODAL */}
-<Modal visible={showEmailExistsModal} transparent animationType="fade">
-  <View style={styles.modalOverlay}>
-    <View style={styles.limitModalBox}>
-      <Ionicons name="mail-outline" size={48} color="tomato" />
-      
-      <ThemedText style={styles.limitTitle}>
-        Email Already Exists
-      </ThemedText>
-      
-      <ThemedText style={styles.limitMessage}>
-        A guest with this email address is already registered in the system. 
-        Please use a different email or search for the existing guest.
-      </ThemedText>
-      
-      <View style={styles.emailModalButtonRow}>
-        <Pressable
-          style={[styles.limitBtn, styles.emailModalCancelBtn]}
-          onPress={() => {
-            setShowEmailExistsModal(false)
-            setShowAddGuestModal(true);
-          }}
-        >
-          <ThemedText style={[styles.limitBtnText, styles.emailModalCancelText]}>
-            Try Again
-          </ThemedText>
-        </Pressable>
-      </View>
-    </View>
-  </View>
-</Modal>
-
-        {/* ADD GUEST MODAL (BASED ON WIREFRAME) */}
-            <Modal visible={showAddGuestModal} transparent animationType="fade">
+            {/* CREATE BILL MODAL */}
+            <Modal visible={showAddModal} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modernWireframeBox}>
-                        <View style={styles.modalHeaderRow}>
-                            <ThemedText style={styles.modalTitleText}>Add Guest</ThemedText>
-                            <Pressable style={styles.closeBtn} onPress={() => setShowAddGuestModal(false)}>
-                                <ThemedText style={styles.closeBtnText}>Close</ThemedText>
-                            </Pressable>
-                        </View>
-                        <ThemedText style={styles.fieldLabel}>First name</ThemedText>
-                        <TextInput style={styles.modernInput} value={guestFirst} onChangeText={setGuestFirst} />
-                        {
-                            errors.guestFirst ? <Text>{errors.guestFirst}</Text> : null
-                        }
-                        <ThemedText style={styles.fieldLabel}>Last name</ThemedText>
-                        <TextInput style={styles.modernInput} value={guestLast} onChangeText={setGuestLast} />
-                        {
-                            errors.guestLast? <Text>{errors.guestLast}</Text> : null
-                        }
-                        <ThemedText style={styles.fieldLabel}>Email address</ThemedText>
-                        <TextInput style={styles.modernInput} value={guestEmail} onChangeText={setGuestEmail} keyboardType="email-address" />
-                        {
-                            errors.guestEmail? <Text>{errors.guestEmail}</Text> : null
-                        }
-                        {
-                            errors.guestEmpty? <Text>{errors.guestEmpty}</Text> : null
-                        }
-                        <Pressable style={styles.submitBtn} onPress={handleSubmit}><ThemedText style={styles.submitBtnText}>Submit button</ThemedText></Pressable>
+                        <ThemedText style={styles.modalTitleText}>Create New Bill</ThemedText>
+                        <TextInput style={styles.modernInput} placeholder="Bill Name" value={billName} onChangeText={setBillName} />
+                        <View style={styles.codeDisplayBox}><ThemedText>{inviteCode}</ThemedText></View>
+                        <Pressable style={styles.smallActionBtn} onPress={() => setShowSelectPeopleModal(true)}>
+                            <ThemedText style={styles.smallActionBtnText}>Select People ({selectedInvolvedPeople.length})</ThemedText>
+                        </Pressable>
+                        <Pressable style={styles.submitBtn} onPress={createBill}><ThemedText style={styles.submitBtnText}>Create Bill</ThemedText></Pressable>
+                        <Pressable style={{marginTop: 15, alignItems: 'center'}} onPress={() => setShowAddModal(false)}><Text>Cancel</Text></Pressable>
                     </View>
                 </View>
             </Modal>
 
-        {/* --- NEW WIREFRAME SELECT PEOPLE MODAL --- */}
-        <SelectPeopleModal 
-            visible={showSelectPeopleModal} 
-            onClose={() => setShowSelectPeopleModal(false)}
-            onConfirm={(people) => setSelectedInvolvedPeople(people)}
-            currentSelection={selectedInvolvedPeople}
-            onAddGuestPress={openGuestModal}
-        />
+            {/* ADD GUEST MODAL */}
+            <Modal visible={showAddGuestModal} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modernWireframeBox}>
+                        <ThemedText style={styles.modalTitleText}>Add New Guest</ThemedText>
+                        <TextInput style={styles.modernInput} placeholder="First Name" value={guestFirst} onChangeText={setGuestFirst} />
+                        <TextInput style={styles.modernInput} placeholder="Last Name" value={guestLast} onChangeText={setGuestLast} />
+                        <TextInput style={styles.modernInput} placeholder="Email" value={guestEmail} onChangeText={setGuestEmail} keyboardType="email-address" />
+                        <Pressable style={styles.submitBtn} onPress={handleAddGuestSubmit}><ThemedText style={styles.submitBtnText}>Add Guest</ThemedText></Pressable>
+                        <Pressable style={{marginTop: 15, alignItems: 'center'}} onPress={() => { setShowAddGuestModal(false); setShowSelectPeopleModal(true); }}><Text>Back</Text></Pressable>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* LIMIT & ERROR MODALS */}
+            <Modal visible={showLimitModal || showPeopleLimitModal || showEmailExistsModal} transparent>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.limitModalBox}>
+                        <Ionicons name="warning" size={40} color="tomato" />
+                        <ThemedText style={styles.limitTitle}>Notice</ThemedText>
+                        <ThemedText style={{textAlign: 'center', marginVertical: 10}}>
+                            {showLimitModal ? "Monthly bill limit reached." : showPeopleLimitModal ? "Standard users limit: 3 people." : "Email already exists."}
+                        </ThemedText>
+                        <Pressable style={styles.limitBtn} onPress={() => { setShowLimitModal(false); setShowPeopleLimitModal(false); setShowEmailExistsModal(false); }}>
+                            <Text style={{color: '#fff'}}>OK</Text>
+                        </Pressable>
+                    </View>
+                </View>
+            </Modal>
+
+            <SelectPeopleModal visible={showSelectPeopleModal} onClose={() => setShowSelectPeopleModal(false)} onConfirm={setSelectedInvolvedPeople} currentSelection={selectedInvolvedPeople} />
         </View>
     );
-    }
+}
 
     const styles = StyleSheet.create({
     // ... existing styles ...

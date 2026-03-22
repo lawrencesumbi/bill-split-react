@@ -1,22 +1,22 @@
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from "@/utils/supabase";
-import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 export default function Archive() {
   const router = useRouter();
 
-  const { user } = useUser();
   const [archivedBills, setArchivedBills] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const loadArchivedBills = async () => {
+  const loadArchivedBills = async (currentUserId: string) => {
     const { data, error } = await supabase
       .from("bills")
       .select("*")
-      .eq("created_by", user?.id)
+      .eq("created_by", currentUserId)
       .eq("status", "archived")
       .order("created_at", { ascending: false });
 
@@ -25,13 +25,24 @@ export default function Archive() {
     } else {
       console.error(error.message);
     }
+    setLoading(false);
   };
 
   useEffect(() => {
-    loadArchivedBills();
+    const getSessionAndBills = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUserId(session.user.id);
+        loadArchivedBills(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    };
+
+    getSessionAndBills();
   }, []);
 
-  const restoreBill = async (billId) => {
+  const restoreBill = async (billId: string) => {
     const { error } = await supabase
       .from("bills")
       .update({ status: "active" })
@@ -42,8 +53,16 @@ export default function Archive() {
       return;
     }
 
-    loadArchivedBills();
+    if (userId) loadArchivedBills(userId);
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="tomato" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -62,7 +81,7 @@ export default function Archive() {
         contentContainerStyle={styles.scrollContainer} 
         showsVerticalScrollIndicator={false}
       >
-        {archivedBills.map(bill => (
+        {archivedBills.map((bill: any) => (
           <View key={bill.id} style={styles.billCard}>
             <View style={styles.billHeader}>
               <View style={styles.iconBg}>
@@ -130,6 +149,12 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: '#F8F9FA', 
     paddingTop: 60 
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA'
   },
   contentHeader: { 
     flexDirection: 'row', 
